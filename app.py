@@ -103,6 +103,22 @@ def load_data():
 
 cases_data = load_data()
 
+# Load Statutory Citator Graph
+@st.cache_data
+def load_citator_data():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "statutory_citator_compact.json"),
+        os.path.join(r"C:\Users\mekdem.belayneh\.gemini\antigravity\scratch\ethiopian_laws", "statutory_citator_compact.json"),
+        "statutory_citator_compact.json"
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p, encoding='utf-8') as f:
+                return json.load(f)
+    return {}
+
+
 # Session state initialization
 if 'selected_for_draft' not in st.session_state:
     st.session_state.selected_for_draft = []
@@ -247,11 +263,12 @@ def filter_case(c):
 filtered_cases = [c for c in cases_data if filter_case(c)]
 
 # Tabs Interface
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "🔍 የሰበር ውሳኔዎች ምርምር (Research & Split Inspector)",
     "📝 የፍርድ ቤት አቤቱታ ረዳት (Word Pleading Drafter)",
     "⚖️ የተሻሩ ውሳኔዎች ማውጫ (Shepard's Overrule Map)",
-    "📊 የ 20 ዓመታት የሕግ ትንተና (Analytics & Trends)"
+    "📊 የ 20 ዓመታት የሕግ ትንተና (Analytics & Trends)",
+    "📜 የሕጎች ትስስር እና አንቀጽ መፈለጊያ (Statutory Citator & Article Explorer)"
 ])
 
 # ==========================================
@@ -576,3 +593,120 @@ with tab4:
         title="በየቅጹ የታተሙ አስገዳጅ ውሳኔዎች ብዛት (Volumes 1 – 28 & Collections)"
     )
     st.plotly_chart(fig_vol, use_container_width=True)
+
+
+# ==========================================
+# TAB 5: STATUTORY CITATOR & ARTICLE EXPLORER
+# ==========================================
+with tab5:
+    st.subheader("📜 የኢትዮጵያ ሕጎች ትስስር እና አንቀጽ መፈለጊያ (Statutory Citator & Article Explorer)")
+    st.write("ከዋና አዋጆች ወደ አስፈፃሚ መመሪያዎች እና ደንቦች የተዘረጋ የሥልጣን ትስስር ማውጫ (Statute-to-Directive Enabling Authority Graph)")
+
+    citator_data = load_citator_data()
+
+    if not citator_data:
+        st.warning("የሕጎች ትስስር መረጃ ቋት አልተጫነም (statutory_citator_compact.json not found).")
+    else:
+        # Search controls
+        c_p1, c_p2, c_p3 = st.columns([4, 3, 3])
+        
+        # Prepare list of proclamations
+        proc_options = sorted(list(citator_data.keys()), key=lambda x: int(x) if x.isdigit() else 9999)
+        
+        # Priority default to 1333 or 1363 if in options
+        default_idx = 0
+        if "1363" in proc_options:
+            default_idx = proc_options.index("1363")
+        elif "1333" in proc_options:
+            default_idx = proc_options.index("1333")
+
+        with c_p1:
+            selected_proc_no = st.selectbox(
+                "📌 አዋጅ ይምረጡ (Select Proclamation No.):",
+                options=proc_options,
+                index=default_idx,
+                format_func=lambda x: f"አዋጅ ቁጥር {x} — {citator_data[x]['title'][:50]}... ({citator_data[x]['total']} የበታች ሕጎች)"
+            )
+            
+        proc_entry = citator_data[selected_proc_no]
+        available_articles = ["ሁሉንም አንቀጾች (All Articles)"] + sorted(list(proc_entry["articles"].keys()))
+
+        with c_p2:
+            selected_article = st.selectbox(
+                "📖 የተጠቀሰውን አንቀጽ ይምረጡ (Select Article Cited):",
+                options=available_articles
+            )
+
+        with c_p3:
+            law_type_filter = st.selectbox(
+                "📂 የበታች ሕግ ዓይነት (Law Type):",
+                ["ሁሉንም (All)", "መመሪያ ብቻ (Directives Only)", "ደንብ ብቻ (Regulations Only)"]
+            )
+
+        # Proclamation Header Card
+        st.markdown(f"""
+        <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 1.25rem; border-radius: 0.75rem; color: white; margin: 1rem 0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
+                <div>
+                    <h3 style="margin: 0; color: #60a5fa; font-size: 1.25rem;">📜 አዋጅ ቁጥር {selected_proc_no}</h3>
+                    <p style="margin: 0.35rem 0 0 0; font-size: 0.95rem; font-weight: 600;">{proc_entry['title']}</p>
+                    <span style="font-size: 0.8rem; background: rgba(59, 130, 246, 0.2); color: #93c5fd; padding: 0.2rem 0.6rem; border-radius: 9999px;">
+                        ዘርፍ፡ {proc_entry.get('subject', 'ጠቅላላ')}
+                    </span>
+                </div>
+                <div style="text-align: right; margin-top: 0.5rem;">
+                    <span style="font-size: 1.2rem; font-weight: 800; color: #34d399;">{proc_entry['total']}</span>
+                    <p style="margin: 0; font-size: 0.8rem; color: #94a3b8;">የተገኙ የበታች ሕጎች</p>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if proc_entry.get("link"):
+            st.markdown(f"[📄 የአዋጁን ሙሉ PDF በ Google Drive ይመልከቱ]({proc_entry['link']})")
+
+        # Collect matching subordinate laws
+        matching_subordinates = []
+        if selected_article == "ሁሉንም አንቀጾች (All Articles)":
+            for art, items in proc_entry["articles"].items():
+                for it in items:
+                    matching_subordinates.append((f"አንቀጽ {art}", it))
+            for it in proc_entry.get("general", []):
+                matching_subordinates.append(("ጠቅላላ ስልጣን", it))
+        else:
+            art_clean = selected_article.replace("አንቀጽ ", "").strip()
+            for it in proc_entry["articles"].get(art_clean, []):
+                matching_subordinates.append((f"አንቀጽ {art_clean}", it))
+
+        # Filter by Law Type
+        if law_type_filter == "መመሪያ ብቻ (Directives Only)":
+            matching_subordinates = [x for x in matching_subordinates if "Directive" in x[1].get("type", "")]
+        elif law_type_filter == "ደንብ ብቻ (Regulations Only)":
+            matching_subordinates = [x for x in matching_subordinates if "Regulation" in x[1].get("type", "")]
+
+        st.markdown(f"##### 🎯 የተገኙ አስፈፃሚ ሕጎች (`{len(matching_subordinates)}`)፡")
+
+        if not matching_subordinates:
+            st.info(f"💡 በአዋጅ ቁጥር {selected_proc_no} {selected_article} መሠረት የወጣ መመሪያ ወይም ደንብ አልተገኘም። (ይህ አንቀጽ እስካሁን በአዲስ መመሪያ ያልተደነገገ ወይም በቀድሞው መመሪያ የመሸጋገሪያ ድንጋጌ የሚገዛ ሊሆን ይችላል)።")
+        else:
+            for idx, (art_lbl, sub) in enumerate(matching_subordinates, 1):
+                with st.container():
+                    st.markdown(f"""
+                    <div style="border: 1px solid #e2e8f0; border-left: 5px solid #3b82f6; border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.85rem; background: #ffffff;">
+                        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
+                            <h4 style="margin: 0; color: #0f172a; font-size: 1.05rem;">
+                                {idx}. [{sub.get('type')}] {sub.get('title')}
+                            </h4>
+                            <span style="background: #e0f2fe; color: #0369a1; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700;">
+                                {art_lbl}
+                            </span>
+                        </div>
+                        <p style="margin: 0.5rem 0 0.5rem 0; font-size: 0.85rem; color: #475569; font-style: italic; background: #f8fafc; padding: 0.5rem; border-radius: 0.25rem;">
+                            <strong>የሥልጣን መነሻ ዐረፍተ-ነገር (Quoted Authority Clause):</strong><br>
+                            "{sub.get('snippet', '-')}"
+                        </p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    if sub.get("link"):
+                        st.markdown(f"👉 [📄 የመመሪያውን PDF በ Drive ክፈት]({sub['link']})")
+                    st.write("")
