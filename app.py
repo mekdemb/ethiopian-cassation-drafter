@@ -45,8 +45,8 @@ st.markdown("""
 
     section[data-testid="stSidebar"] { background: var(--surface); border-right: 1px solid var(--rule); }
 
-    .stTabs [data-baseweb="tab-list"] { gap: 0.25rem; border-bottom: 1px solid var(--rule); }
-    .stTabs [data-baseweb="tab"] { padding: 0.6rem 0.9rem; border-radius: 6px 6px 0 0; color: var(--ink-muted); }
+    .stTabs [data-baseweb="tab-list"] { gap: 0.2rem; border-bottom: 1px solid var(--rule); width: 100%; }
+    .stTabs [data-baseweb="tab"] { padding: 0.45rem 0.65rem !important; font-size: 0.86rem !important; border-radius: 6px 6px 0 0; color: var(--ink-muted); white-space: nowrap; }
     .stTabs [aria-selected="true"] { color: var(--accent) !important; font-weight: 700; }
     .stTabs [data-baseweb="tab-highlight"] { background-color: var(--accent); }
 
@@ -330,11 +330,11 @@ filtered_cases = [c for c in cases_data if filter_case(c)]
 # Tabs Interface
 tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "የሰበር ውሳኔዎች (Precedents)",
-    "አቤቱታ አዘጋጅ (Pleading Drafter)",
+    "አቤቱታ አዘጋጅ (Drafter)",
     "የተሻሩ ውሳኔዎች (Overruled)",
     "የሕግ ትንተና (Analytics)",
-    "የሥልጣን ትስስር (Statutory Citator)",
-    "የሕጎች ማውጫ (Laws Library)"
+    "የሥልጣን ትስስር (Citator)",
+    "የሕጎች ማውጫ (Library)"
 ])
 
 # ==========================================
@@ -736,18 +736,32 @@ with tab5:
             if proc_entry.get("link"):
                 st.markdown(f"[የአዋጁን ሙሉ PDF በ Google Drive ይመልከቱ]({proc_entry['link']})")
 
-            # Collect matching subordinate laws
-            matching_subordinates = []
+            # Collect matching subordinate laws (Strict Deduplication & Article Aggregation)
             if selected_article == "ሁሉንም አንቀጾች (All Articles)":
+                law_agg = {}
                 for art, items in proc_entry["articles"].items():
                     for it in items:
-                        matching_subordinates.append((f"አንቀጽ {art}", it))
+                        t = it['title']
+                        art_lbl = f"አንቀጽ {art}"
+                        if t not in law_agg:
+                            law_agg[t] = {'item': it, 'articles': [art_lbl]}
+                        else:
+                            if art_lbl not in law_agg[t]['articles']:
+                                law_agg[t]['articles'].append(art_lbl)
                 for it in proc_entry.get("general", []):
-                    matching_subordinates.append(("ጠቅላላ የሥልጣን ውክልና", it))
+                    t = it['title']
+                    if t not in law_agg:
+                        law_agg[t] = {'item': it, 'articles': ["ጠቅላላ የሥልጣን ውክልና"]}
+
+                matching_subordinates = [( "፣ ".join(v['articles']), v['item']) for v in law_agg.values()]
             else:
                 art_clean = selected_article.replace("አንቀጽ ", "").strip()
+                seen_sub_titles = set()
+                matching_subordinates = []
                 for it in proc_entry["articles"].get(art_clean, []):
-                    matching_subordinates.append((f"አንቀጽ {art_clean}", it))
+                    if it['title'] not in seen_sub_titles:
+                        seen_sub_titles.add(it['title'])
+                        matching_subordinates.append((f"አንቀጽ {art_clean}", it))
 
             # Filter by Law Type
             if law_type_filter == "መመሪያ ብቻ (Directives Only)":
@@ -980,9 +994,9 @@ with tab6:
 
             for idx, law in enumerate(filtered_catalog[start_idx:end_idx], start=start_idx + 1):
                 with st.container():
-                    yr_display = f"{law.get('year', '-')} ዓ.ም." if law.get('year') else "-"
-                    if law.get('year_gc') and law.get('year_gc') != law.get('year'):
-                        yr_display += f" ({law.get('year_gc')} G.C.)"
+                    ec_val = law.get('year', '-')
+                    gc_val = law.get('year_gc', '-')
+                    yr_display = f"{ec_val} ዓ.ም. ({gc_val} G.C.)"
                         
                     st.markdown(f"""
                     <div class="law-card">
