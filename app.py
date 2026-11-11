@@ -939,7 +939,7 @@ with tab6:
                     "ደንብ (Regulation)",
                     "መመሪያ (Directive)",
                     "ስምምነት (Treaty)",
-                    "ጠቅላላ ሰነድ (General Documents)"
+                    "ጠቅላላ ሰነድ (General Document)"
                 ]
             )
 
