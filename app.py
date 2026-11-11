@@ -166,6 +166,35 @@ def load_citator_data():
                 return json.load(f)
     return {}
 
+# Load Reverse Citator Graph (Subordinate -> Enabling Statute & Article)
+@st.cache_data
+def load_reverse_citator_data():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "reverse_citator_compact.json"),
+        os.path.join(r"C:\Users\mekdem.belayneh\.gemini\antigravity\scratch\ethiopian_laws\cassation", "reverse_citator_compact.json"),
+        "reverse_citator_compact.json"
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p, encoding='utf-8') as f:
+                return json.load(f)
+    return []
+
+# Load Laws Catalog (6,192 Ministry of Justice Enactments across 15 Subjects)
+@st.cache_data
+def load_laws_catalog():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "laws_catalog_compact.json"),
+        os.path.join(r"C:\Users\mekdem.belayneh\.gemini\antigravity\scratch\ethiopian_laws\cassation", "laws_catalog_compact.json"),
+        "laws_catalog_compact.json"
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p, encoding='utf-8') as f:
+                return json.load(f)
+    return []
 
 # Session state initialization
 if 'selected_for_draft' not in st.session_state:
@@ -299,12 +328,13 @@ def filter_case(c):
 filtered_cases = [c for c in cases_data if filter_case(c)]
 
 # Tabs Interface
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "🔍 የሰበር ውሳኔዎች ምርምር (Research & Split Inspector)",
     "📝 የፍርድ ቤት አቤቱታ ረዳት (Word Pleading Drafter)",
     "⚖️ የተሻሩ ውሳኔዎች ማውጫ (Shepard's Overrule Map)",
     "📊 የ 20 ዓመታት የሕግ ትንተና (Analytics & Trends)",
-    "📜 የሕጎች ትስስር እና አንቀጽ መፈለጊያ (Statutory Citator & Article Explorer)"
+    "📜 የሥልጣን ትስስር (Statutory Citator: Forward & Reverse)",
+    "📚 የሕጎች ማውጫ በዘርፍ (Laws Library - 6,192 Laws in 15 Subjects)"
 ])
 
 # ==========================================
@@ -632,109 +662,343 @@ with tab4:
 
 
 # ==========================================
-# TAB 5: STATUTORY CITATOR & ARTICLE EXPLORER
+# TAB 5: STATUTORY CITATOR & ARTICLE EXPLORER (FORWARD & REVERSE)
 # ==========================================
 with tab5:
-    st.subheader("📜 የኢትዮጵያ ሕጎች ትስስር እና አንቀጽ መፈለጊያ (Statutory Citator & Article Explorer)")
-    st.write("ከዋና አዋጆች ወደ አስፈፃሚ መመሪያዎች እና ደንቦች የተዘረጋ የሥልጣን ትስስር ማውጫ (Statute-to-Directive Enabling Authority Graph)")
+    st.subheader("📜 የኢትዮጵያ ሕጎች ሥልጣን ትስስር (Statutory Citator: Forward & Reverse)")
+    st.write("በዋና አዋጆች እና በአስፈፃሚ መመሪያዎች/ደንቦች መካከል የተዘረጋ ባለሁለት-አቅጣጫ የሥልጣን ትስስር ማውጫ (Two-Way Enabling Authority & Ultra Vires Graph)")
+
+    citator_mode = st.radio(
+        "የፍተሻ አቅጣጫ ይምረጡ (Select Citator Direction):",
+        [
+            "📜 ከአዋጅ ➔ ወደ አስፈፃሚ መመሪያዎች/ደንቦች (Forward: Statute ➔ Subordinate Laws)",
+            "🔍 ከመመሪያ/ደንብ ➔ ወደ አዋጅ እና ሥልጣን ሰጪ አንቀጽ (Reverse: Subordinate Law ➔ Enabling Authority)"
+        ],
+        horizontal=True
+    )
 
     citator_data = load_citator_data()
 
-    if not citator_data:
-        st.warning("የሕጎች ትስስር መረጃ ቋት አልተጫነም (statutory_citator_compact.json not found).")
-    else:
-        # Search controls
-        c_p1, c_p2, c_p3 = st.columns([4, 3, 3])
-        
-        # Prepare list of proclamations
-        proc_options = sorted(list(citator_data.keys()), key=lambda x: int(x) if x.isdigit() else 9999)
-        
-        # Priority default to 1333 or 1363 if in options
-        default_idx = 0
-        if "1363" in proc_options:
-            default_idx = proc_options.index("1363")
-        elif "1333" in proc_options:
-            default_idx = proc_options.index("1333")
-
-        with c_p1:
-            selected_proc_no = st.selectbox(
-                "📌 አዋጅ ይምረጡ (Select Proclamation No.):",
-                options=proc_options,
-                index=default_idx,
-                format_func=lambda x: f"አዋጅ ቁጥር {x} — {citator_data[x]['title'][:50]}... ({citator_data[x]['total']} የበታች ሕጎች)"
-            )
+    if "Forward" in citator_mode:
+        if not citator_data:
+            st.warning("የሕጎች ትስስር መረጃ ቋት አልተጫነም (statutory_citator_compact.json not found).")
+        else:
+            # Search controls
+            c_p1, c_p2, c_p3 = st.columns([4, 3, 3])
             
-        proc_entry = citator_data[selected_proc_no]
-        available_articles = ["ሁሉንም አንቀጾች (All Articles)"] + sorted(list(proc_entry["articles"].keys()))
+            # Prepare list of proclamations
+            proc_options = sorted(list(citator_data.keys()), key=lambda x: int(x) if x.isdigit() else 9999)
+            
+            # Priority default to 1333 or 1363 if in options
+            default_idx = 0
+            if "1363" in proc_options:
+                default_idx = proc_options.index("1363")
+            elif "1333" in proc_options:
+                default_idx = proc_options.index("1333")
 
-        with c_p2:
-            selected_article = st.selectbox(
-                "📖 የተጠቀሰውን አንቀጽ ይምረጡ (Select Article Cited):",
-                options=available_articles
+            with c_p1:
+                selected_proc_no = st.selectbox(
+                    "📌 አዋጅ ይምረጡ (Select Proclamation No.):",
+                    options=proc_options,
+                    index=default_idx,
+                    format_func=lambda x: f"አዋጅ ቁጥር {x} — {citator_data[x]['title'][:50]}... ({citator_data[x]['total']} የበታች ሕጎች)"
+                )
+                
+            proc_entry = citator_data[selected_proc_no]
+            available_articles = ["ሁሉንም አንቀጾች (All Articles)"] + sorted(list(proc_entry["articles"].keys()))
+
+            with c_p2:
+                selected_article = st.selectbox(
+                    "📖 የተጠቀሰውን አንቀጽ ይምረጡ (Select Article Cited):",
+                    options=available_articles
+                )
+
+            with c_p3:
+                law_type_filter = st.selectbox(
+                    "📂 የበታች ሕግ ዓይነት (Law Type):",
+                    ["ሁሉንም (All)", "መመሪያ ብቻ (Directives Only)", "ደንብ ብቻ (Regulations Only)"]
+                )
+
+            # Proclamation Header Card
+            st.markdown(f"""
+            <div class="proc-card">
+                <div>
+                    <h3>አዋጅ ቁጥር {selected_proc_no}</h3>
+                    <p class="title">{proc_entry['title']}</p>
+                    <span class="chip">ዘርፍ፡ {proc_entry.get('subject', 'ጠቅላላ')}</span>
+                </div>
+                <div style="text-align: right;">
+                    <div class="figure">{proc_entry['total']}</div>
+                    <p class="caption">የተገኙ የበታች ሕጎች</p>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            if proc_entry.get("link"):
+                st.markdown(f"[📄 የአዋጁን ሙሉ PDF በ Google Drive ይመልከቱ]({proc_entry['link']})")
+
+            # Collect matching subordinate laws
+            matching_subordinates = []
+            if selected_article == "ሁሉንም አንቀጾች (All Articles)":
+                for art, items in proc_entry["articles"].items():
+                    for it in items:
+                        matching_subordinates.append((f"አንቀጽ {art}", it))
+                for it in proc_entry.get("general", []):
+                    matching_subordinates.append(("ጠቅላላ ስልጣን", it))
+            else:
+                art_clean = selected_article.replace("አንቀጽ ", "").strip()
+                for it in proc_entry["articles"].get(art_clean, []):
+                    matching_subordinates.append((f"አንቀጽ {art_clean}", it))
+
+            # Filter by Law Type
+            if law_type_filter == "መመሪያ ብቻ (Directives Only)":
+                matching_subordinates = [x for x in matching_subordinates if "Directive" in x[1].get("type", "")]
+            elif law_type_filter == "ደንብ ብቻ (Regulations Only)":
+                matching_subordinates = [x for x in matching_subordinates if "Regulation" in x[1].get("type", "")]
+
+            st.markdown(f"##### 🎯 የተገኙ አስፈፃሚ ሕጎች (`{len(matching_subordinates)}`)፡")
+
+            if not matching_subordinates:
+                st.info(f"💡 በአዋጅ ቁጥር {selected_proc_no} {selected_article} መሠረት የወጣ መመሪያ ወይም ደንብ አልተገኘም። (ይህ አንቀጽ እስካሁን በአዲስ መመሪያ ያልተደነገገ ወይም በቀድሞው መመሪያ የመሸጋገሪያ ድንጋጌ የሚገዛ ሊሆን ይችላል)።")
+            else:
+                for idx, (art_lbl, sub) in enumerate(matching_subordinates, 1):
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="law-card">
+                            <div class="head">
+                                <h4>{idx}. [{sub.get('type')}] {sub.get('title')}</h4>
+                                <span class="chip">{art_lbl}</span>
+                            </div>
+                            <p class="quote">
+                                <strong>የሥልጣን መነሻ ዐረፍተ-ነገር (Quoted Authority Clause)</strong>
+                                "{sub.get('snippet', '-')}"
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        if sub.get("link"):
+                            st.markdown(f"👉 [📄 የመመሪያውን PDF በ Drive ክፈት]({sub['link']})")
+                        st.write("")
+
+    else:
+        # REVERSE CITATOR
+        reverse_data = load_reverse_citator_data()
+        if not reverse_data:
+            st.warning("የተገላቢጦሽ የሥልጣን ትስስር መረጃ አልተገኘም (reverse_citator_compact.json not found).")
+        else:
+            st.write("🔎 **የአስተዳደር መመሪያዎችን የሕግ መሠረት ፍተሻ (Ultra Vires & Enabling Authority Inspector):** ማናቸውንም መመሪያ ወይም ደንብ በመምረጥ አውጪው አካል የሥልጣን ውክልና ያገኘበትን ዋና አዋጅ እና የተወሰነ አንቀጽ ወዲያውኑ ይመልከቱ።")
+
+            r_col1, r_col2 = st.columns([3, 7])
+            with r_col1:
+                rev_type_filter = st.selectbox("የሕግ ዓይነት (Filter Type):", ["ሁሉንም (All)", "መመሪያዎች ብቻ (Directives)", "ደንቦች ብቻ (Regulations)"])
+                rev_keyword = st.text_input("በቁጥር ወይም ቃል ፈልግ (Search Subordinate Law):", placeholder="ለምሳሌ፡ 1094, 1060, ነዳጅ, ግዥ, ንግድ...")
+
+            # Filter reverse data
+            filtered_reverse = reverse_data
+            if rev_type_filter == "መመሪያዎች ብቻ (Directives)":
+                filtered_reverse = [x for x in filtered_reverse if x.get('category') == 'Directives']
+            elif rev_type_filter == "ደንቦች ብቻ (Regulations)":
+                filtered_reverse = [x for x in filtered_reverse if x.get('category') == 'Regulations']
+            
+            if rev_keyword:
+                kw_norm = normalize_amharic(rev_keyword)
+                filtered_reverse = [
+                    x for x in filtered_reverse
+                    if kw_norm in normalize_amharic(x.get('title', '')) or kw_norm in str(x.get('law_number', ''))
+                ]
+
+            with r_col2:
+                if not filtered_reverse:
+                    st.warning("ምንም መመሪያ ወይም ደንብ አልተገኘም።")
+                    selected_sub_idx = None
+                else:
+                    selected_sub_idx = st.selectbox(
+                        f"📌 መመሪያ/ደንብ ይምረጡ ({len(filtered_reverse):,} የተገኙ):",
+                        options=range(len(filtered_reverse)),
+                        format_func=lambda i: f"[{filtered_reverse[i].get('category', 'Directive')[:3]}] {filtered_reverse[i].get('title', '')[:70]}..."
+                    )
+
+            if selected_sub_idx is not None and filtered_reverse:
+                active_sub = filtered_reverse[selected_sub_idx]
+                
+                # Header card for selected directive
+                st.markdown(f"""
+                <div class="proc-card">
+                    <div>
+                        <h3>📜 {active_sub.get('title')}</h3>
+                        <p class="title">ዓይነት፡ {active_sub.get('category')} | ቁጥር፡ {active_sub.get('law_number', '-')} | ዓመት፡ {active_sub.get('year', '-')}</p>
+                        <span class="chip">ዘርፍ፡ {active_sub.get('subject', 'ጠቅላላ')}</span>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="figure">{len(active_sub.get('authorities', []))}</div>
+                        <p class="caption">የተጠቀሱ ዋና አዋጆች</p>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if active_sub.get("link"):
+                    st.markdown(f"👉 [📄 የዚህን የበታች ሕግ ሙሉ PDF በ Drive ክፈት]({active_sub['link']})")
+
+                st.markdown(f"##### 🏛️ ይህ መመሪያ ሥልጣን ያገኘባቸው ዋና አዋጆች እና አንቀጾች ({len(active_sub.get('authorities', []))})፡")
+
+                for a_idx, auth in enumerate(active_sub.get('authorities', []), 1):
+                    with st.container():
+                        art_display = f"አንቀጽ {auth.get('article')}" if auth.get('article') and "ጠቅላላ" not in auth.get('article') else "ጠቅላላ የሥልጣን ውክልና"
+                        st.markdown(f"""
+                        <div class="law-card">
+                            <div class="head">
+                                <h4>{a_idx}. አዋጅ ቁጥር {auth.get('proc_no')} — {auth.get('proc_title')[:70]}</h4>
+                                <span class="chip">{art_display}</span>
+                            </div>
+                            <p class="quote">
+                                <strong>በመመሪያው መግቢያ/ድንጋጌ የተጠቀሰ ሥልጣን ሰጪ ዐረፍተ-ነገር (Enabling Authority Clause):</strong>
+                                "{auth.get('snippet', '-')}"
+                            </p>
+                        </div>
+                        """, unsafe_allow_html=True)
+                        if auth.get("proc_link"):
+                            st.markdown(f"🔗 [📄 የዋናውን አዋጅ PDF በ Drive ይመልከቱ]({auth['proc_link']})")
+                        st.write("")
+
+
+# ==========================================
+# TAB 6: LAWS LIBRARY BY SUBJECT (6,192 ENACTMENTS)
+# ==========================================
+with tab6:
+    st.subheader("📚 የኢትዮጵያ ሕጎች ቤተ-መጻሕፍት በዘርፍ (Ministry of Justice Laws Library - 6,192 Enactments)")
+    st.write("በፍትህ ሚኒስቴር የታተሙ 6,192 አዋጆች፣ ደንቦች፣ መመሪያዎች እና ዓለም አቀፍ ስምምነቶች በ15 የሕግ ዘርፎች የተመደቡበት ማውጫ")
+
+    laws_catalog = load_laws_catalog()
+
+    if not laws_catalog:
+        st.warning("የሕጎች ማውጫ መረጃ አልተገኘም (laws_catalog_compact.json not found).")
+    else:
+        # Top KPI stats for laws
+        l_kpi1, l_kpi2, l_kpi3, l_kpi4, l_kpi5 = st.columns(5)
+        tot_laws = len(laws_catalog)
+        procs_cnt = len([x for x in laws_catalog if "አዋጅ" in x.get('norm', '') or "Proclamation" in x.get('norm', '')])
+        regs_cnt = len([x for x in laws_catalog if "ደንብ" in x.get('norm', '') or "Regulation" in x.get('norm', '')])
+        dirs_cnt = len([x for x in laws_catalog if "መመሪያ" in x.get('norm', '') or "Directive" in x.get('norm', '')])
+        treaty_cnt = len([x for x in laws_catalog if "ስምምነት" in x.get('norm', '') or "Treaty" in x.get('norm', '')])
+
+        l_kpi1.metric("📚 ጠቅላላ ሕጎች", f"{tot_laws:,}")
+        l_kpi2.metric("📜 አዋጆች (Proclamations)", f"{procs_cnt:,}")
+        l_kpi3.metric("📋 ደንቦች (Regulations)", f"{regs_cnt:,}")
+        l_kpi4.metric("📝 መመሪያዎች (Directives)", f"{dirs_cnt:,}")
+        l_kpi5.metric("🌐 ስምምነቶች (Treaties)", f"{treaty_cnt:,}")
+
+        st.markdown("---")
+
+        # Filters
+        l_f1, l_f2, l_f3 = st.columns([4, 3, 3])
+
+        # 15 Subjects list
+        raw_subjects = [
+            "ሁሉም የሕግ ዘርፎች (All 15 Subjects)",
+            "መሬት፣ ቤቶች፣ ከተማና ኮንስትራክሽን (1,257) • Land & Construction",
+            "ሕገ-መንግሥትና አስተዳደር (1,623) • Constitutional & Governance",
+            "የመንግሥት ፋይናንስ፣ በጀትና ዕዳ (878) • Public Finance & Debt",
+            "ንግድ፣ ኩባንያና ኢንቨስትመንት (544) • Trade & Investment",
+            "ታክስ፣ ጉምሩክና ታሪፍ (509) • Tax, Customs & Tariffs",
+            "ባንክ፣ ኢንሹራንስና ካፒታል ገበያ (333) • Banking & Capital Markets",
+            "ትራንስፖርት፣ ሎጂስቲክስና አቪዬሽን (226) • Transport & Logistics",
+            "ትምህርት፣ ሳይንስና ቴሌኮም (192) • Education & Telecom",
+            "አካባቢ ጥበቃ፣ ማዕድንና ኢነርጂ (176) • Environment & Energy",
+            "ጤና ጥበቃና መድኃኒት (145) • Health & Pharmaceuticals",
+            "ወንጀል ፍትሕና ጸጥታ (87) • Criminal Justice & Safety",
+            "አሰሪና ሠራተኛ፣ ሲቪል ሰርቪስ (87) • Labor & Pensions",
+            "ባህል፣ ሚዲያና ስምምነቶች (77) • Culture, Media & Treaties",
+            "ፍርድ ቤቶችና የሕግ ሙያ (30) • Courts & Judiciary",
+            "ግብርና፣ እንስሳትና መስኖ (28) • Agriculture & Irrigation"
+        ]
+
+        subject_key_map = {
+            "መሬት፣ ቤቶች፣ ከተማና ኮንስትራክሽን": "Land",
+            "ሕገ-መንግሥትና አስተዳደር": "Constitutional",
+            "የመንግሥት ፋይናንስ፣ በጀትና ዕዳ": "Public Finance",
+            "ንግድ፣ ኩባንያና ኢንቨስትመንት": "Trade",
+            "ታክስ፣ ጉምሩክና ታሪፍ": "Taxation",
+            "ባንክ፣ ኢንሹራንስና ካፒታል ገበያ": "Banking",
+            "ትራንስፖርት፣ ሎጂስቲክስና አቪዬሽን": "Transport",
+            "ትምህርት፣ ሳይንስና ቴሌኮም": "Education",
+            "አካባቢ ጥበቃ፣ ማዕድንና ኢነርጂ": "Environment",
+            "ጤና ጥበቃና መድኃኒት": "Health",
+            "ወንጀል ፍትሕና ጸጥታ": "Criminal",
+            "አሰሪና ሠራተኛ፣ ሲቪል ሰርቪስ": "Labor",
+            "ባህል፣ ሚዲያና ስምምነቶች": "Culture",
+            "ፍርድ ቤቶችና የሕግ ሙያ": "Courts",
+            "ግብርና፣ እንስሳትና መስኖ": "Agriculture"
+        }
+
+        with l_f1:
+            sel_subject_label = st.selectbox("📂 የሕግ ዘርፍ ይምረጡ (Select Subject):", raw_subjects)
+
+        with l_f2:
+            sel_norm = st.selectbox(
+                "⚖️ የሕግ ደረጃ (Norm Level):",
+                ["ሁሉም የሕግ ደረጃዎች (All)", "አዋጅ (Proclamation)", "ደንብ (Regulation)", "መመሪያ (Directive)", "ስምምነት (Treaty)"]
             )
 
-        with c_p3:
-            law_type_filter = st.selectbox(
-                "📂 የበታች ሕግ ዓይነት (Law Type):",
-                ["ሁሉንም (All)", "መመሪያ ብቻ (Directives Only)", "ደንብ ብቻ (Regulations Only)"]
-            )
+        with l_f3:
+            law_search_kw = st.text_input("🔍 የሕግ ቁጥር ወይም ቃል ፍለጋ:", placeholder="ምሳሌ፡ 1333, 1094, ታክስ, መሬት, ግዥ...")
 
-        # Proclamation Header Card
-        st.markdown(f"""
-        <div class="proc-card">
-            <div>
-                <h3>አዋጅ ቁጥር {selected_proc_no}</h3>
-                <p class="title">{proc_entry['title']}</p>
-                <span class="chip">ዘርፍ፡ {proc_entry.get('subject', 'ጠቅላላ')}</span>
-            </div>
-            <div style="text-align: right;">
-                <div class="figure">{proc_entry['total']}</div>
-                <p class="caption">የተገኙ የበታች ሕጎች</p>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Filter application
+        filtered_catalog = laws_catalog
+        if "All 15" not in sel_subject_label:
+            prefix_am = sel_subject_label.split(" (")[0]
+            en_prefix = subject_key_map.get(prefix_am, "")
+            filtered_catalog = [x for x in filtered_catalog if en_prefix in x.get('subject_en', '')]
 
-        if proc_entry.get("link"):
-            st.markdown(f"[📄 የአዋጁን ሙሉ PDF በ Google Drive ይመልከቱ]({proc_entry['link']})")
+        if "አዋጅ" in sel_norm:
+            filtered_catalog = [x for x in filtered_catalog if "አዋጅ" in x.get('norm', '') or "Proclamation" in x.get('norm', '')]
+        elif "ደንብ" in sel_norm:
+            filtered_catalog = [x for x in filtered_catalog if "ደንብ" in x.get('norm', '') or "Regulation" in x.get('norm', '')]
+        elif "መመሪያ" in sel_norm:
+            filtered_catalog = [x for x in filtered_catalog if "መመሪያ" in x.get('norm', '') or "Directive" in x.get('norm', '')]
+        elif "ስምምነት" in sel_norm:
+            filtered_catalog = [x for x in filtered_catalog if "ስምምነት" in x.get('norm', '') or "Treaty" in x.get('norm', '')]
 
-        # Collect matching subordinate laws
-        matching_subordinates = []
-        if selected_article == "ሁሉንም አንቀጾች (All Articles)":
-            for art, items in proc_entry["articles"].items():
-                for it in items:
-                    matching_subordinates.append((f"አንቀጽ {art}", it))
-            for it in proc_entry.get("general", []):
-                matching_subordinates.append(("ጠቅላላ ስልጣን", it))
+        if law_search_kw:
+            kw_n = normalize_amharic(law_search_kw)
+            filtered_catalog = [
+                x for x in filtered_catalog
+                if kw_n in normalize_amharic(x.get('title_am', '')) or kw_n in normalize_amharic(x.get('title_en', '')) or kw_n in str(x.get('no', ''))
+            ]
+
+        st.markdown(f"##### 🎯 የተገኙ ሕጎች ዝርዝር (`{len(filtered_catalog):,}`)፡")
+
+        if not filtered_catalog:
+            st.info("💡 በተመረጠው መስፈርት የተገኘ ሕግ የለም።")
         else:
-            art_clean = selected_article.replace("አንቀጽ ", "").strip()
-            for it in proc_entry["articles"].get(art_clean, []):
-                matching_subordinates.append((f"አንቀጽ {art_clean}", it))
+            # Pagination for fast rendering
+            page_size = 20
+            total_pages = max(1, (len(filtered_catalog) + page_size - 1) // page_size)
+            
+            p_col1, p_col2 = st.columns([2, 8])
+            with p_col1:
+                cur_page = st.number_input("ገጽ (Page):", min_value=1, max_value=total_pages, value=1, step=1)
+            with p_col2:
+                st.write(f"ገጽ {cur_page} ከ {total_pages} (በአጠቃላይ {len(filtered_catalog):,} ሕጎች)")
 
-        # Filter by Law Type
-        if law_type_filter == "መመሪያ ብቻ (Directives Only)":
-            matching_subordinates = [x for x in matching_subordinates if "Directive" in x[1].get("type", "")]
-        elif law_type_filter == "ደንብ ብቻ (Regulations Only)":
-            matching_subordinates = [x for x in matching_subordinates if "Regulation" in x[1].get("type", "")]
+            start_idx = (cur_page - 1) * page_size
+            end_idx = min(start_idx + page_size, len(filtered_catalog))
 
-        st.markdown(f"##### 🎯 የተገኙ አስፈፃሚ ሕጎች (`{len(matching_subordinates)}`)፡")
-
-        if not matching_subordinates:
-            st.info(f"💡 በአዋጅ ቁጥር {selected_proc_no} {selected_article} መሠረት የወጣ መመሪያ ወይም ደንብ አልተገኘም። (ይህ አንቀጽ እስካሁን በአዲስ መመሪያ ያልተደነገገ ወይም በቀድሞው መመሪያ የመሸጋገሪያ ድንጋጌ የሚገዛ ሊሆን ይችላል)።")
-        else:
-            for idx, (art_lbl, sub) in enumerate(matching_subordinates, 1):
+            for idx, law in enumerate(filtered_catalog[start_idx:end_idx], start=start_idx + 1):
                 with st.container():
                     st.markdown(f"""
                     <div class="law-card">
                         <div class="head">
-                            <h4>{idx}. [{sub.get('type')}] {sub.get('title')}</h4>
-                            <span class="chip">{art_lbl}</span>
+                            <h4>{idx}. [{law.get('norm')}] {law.get('title_am')}</h4>
+                            <div>
+                                <span class="chip">ቁጥር፡ {law.get('no', '-')}</span>
+                                <span class="chip">ዓመት፡ {law.get('year', '-')}</span>
+                                <span class="chip">{law.get('subject_am', '')}</span>
+                            </div>
                         </div>
-                        <p class="quote">
-                            <strong>የሥልጣን መነሻ ዐረፍተ-ነገር (Quoted Authority Clause)</strong>
-                            "{sub.get('snippet', '-')}"
+                        <p style="margin: 0.4rem 0 0.2rem 0; font-size: 0.85rem; color: var(--ink-muted);">
+                            {law.get('title_en', '')}
                         </p>
                     </div>
                     """, unsafe_allow_html=True)
-                    if sub.get("link"):
-                        st.markdown(f"👉 [📄 የመመሪያውን PDF በ Drive ክፈት]({sub['link']})")
+                    if law.get('link'):
+                        st.markdown(f"👉 [📄 የሕጉን ሙሉ PDF በ Google Drive ክፈት ({law.get('size_mb', 0)} MB)]({law['link']})")
                     st.write("")
