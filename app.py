@@ -1,4 +1,5 @@
 import streamlit as st
+import html
 import json
 import os
 import re
@@ -18,53 +19,100 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Custom CSS for Ethiopic font & clean legal theme
+# Custom CSS: "Ethiopian Cassation Precedents" design system, version 2
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Ethiopic:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap');
-    
-    html, body, [class*="css"] {
-        font-family: 'Noto Sans Ethiopic', 'Inter', sans-serif;
+    @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+Ethiopic:wght@500;600;700&family=Noto+Sans+Ethiopic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
+
+    :root {
+        --ink: #0b1f33; --ink-muted: #5b6472; --ink-on-dark-muted: #c9d2dc;
+        --ground: #f4f5f7; --surface: #ffffff; --surface-sunken: #eef1f4;
+        --rule: #dfe3e8; --control-border: #c3cad3;
+        --accent: #0b6b4f; --accent-tint: #e6f2ed;
+        --plenary-fg: #8a5a00; --plenary-bg: #fbf3db; --plenary-border: #ecd9a6;
+        --overruled-fg: #b42318; --overruled-bg: #fdecea; --overruled-border: #f3c2bc;
+        --unconfirmed-fg: #9a4a00; --unconfirmed-bg: #fff1e5; --unconfirmed-border: #f2cfae;
+        --font-serif: 'Noto Serif Ethiopic', Georgia, serif;
+        --font-sans: 'Inter', 'Noto Sans Ethiopic', sans-serif;
     }
-    
+
+    html, body, [class*="css"], .stApp, .stMarkdown, button, input, textarea, select {
+        font-family: var(--font-sans);
+        color: var(--ink);
+    }
+    .stApp { background: var(--ground); }
+    h1, h2, h3, h4, h5 { font-family: var(--font-serif) !important; color: var(--ink); }
+
+    section[data-testid="stSidebar"] { background: var(--surface); border-right: 1px solid var(--rule); }
+
+    .stTabs [data-baseweb="tab-list"] { gap: 0.25rem; border-bottom: 1px solid var(--rule); }
+    .stTabs [data-baseweb="tab"] { padding: 0.6rem 0.9rem; border-radius: 6px 6px 0 0; color: var(--ink-muted); }
+    .stTabs [aria-selected="true"] { color: var(--accent) !important; font-weight: 700; }
+    .stTabs [data-baseweb="tab-highlight"] { background-color: var(--accent); }
+
+    .stButton > button, .stDownloadButton > button {
+        border-radius: 6px; min-height: 44px; font-weight: 600;
+        border: 1px solid var(--control-border); background: var(--surface); color: var(--ink);
+    }
+    .stDownloadButton > button, .stButton > button[kind="primary"] {
+        background: var(--accent); border-color: var(--accent); color: #ffffff;
+    }
+    .stButton > button:hover { border-color: var(--accent); color: var(--accent); }
+    .stDownloadButton > button:hover { background: #095a43; color: #ffffff; }
+
+    div[data-testid="stMetric"] {
+        background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 0.9rem 1rem;
+    }
+    div[data-testid="stMetricLabel"] { color: var(--ink-muted); }
+
     .main-header {
-        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-        color: white;
-        padding: 1.5rem;
-        border-radius: 1rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+        background: var(--ink); color: #ffffff;
+        padding: 1.25rem 1.5rem; border-radius: 8px; margin-bottom: 1.25rem;
     }
-    
-    .overruled-banner {
-        background-color: #fee2e2;
-        border-left: 5px solid #ef4444;
-        color: #991b1b;
-        padding: 0.85rem;
-        border-radius: 0.5rem;
-        font-weight: 600;
-        margin-bottom: 1rem;
+    .main-header h1 { font-family: var(--font-serif) !important; color: #ffffff !important; margin: 0; font-size: 1.6rem; font-weight: 700; }
+    .main-header p { margin: 0.35rem 0 0 0; font-size: 0.85rem; color: var(--ink-on-dark-muted); }
+    .main-header .eyebrow { font-size: 0.7rem; letter-spacing: 0.08em; color: var(--ink-on-dark-muted); margin: 0 0 0.35rem 0; }
+
+    .overruled-banner, .plenary-banner, .unconfirmed-banner {
+        border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.75rem;
+        font-size: 0.875rem; line-height: 1.55; font-weight: 500;
     }
-    
-    .plenary-banner {
-        background-color: #fef3c7;
-        border-left: 5px solid #d97706;
-        color: #78350f;
-        padding: 0.85rem;
-        border-radius: 0.5rem;
-        font-weight: 600;
-        margin-bottom: 1rem;
+    .overruled-banner strong, .plenary-banner strong, .unconfirmed-banner strong { font-weight: 700; }
+    .overruled-banner { background: var(--overruled-bg); color: var(--overruled-fg); border: 1px solid var(--overruled-border); }
+    .plenary-banner { background: var(--plenary-bg); color: var(--plenary-fg); border: 1px solid var(--plenary-border); }
+    .unconfirmed-banner { background: var(--unconfirmed-bg); color: var(--unconfirmed-fg); border: 1px solid var(--unconfirmed-border); }
+
+    blockquote.holding {
+        margin: 0 0 1rem 0; padding: 1rem 1.25rem; border: 1px solid var(--rule); border-radius: 8px;
+        background: var(--surface); font-family: var(--font-serif); font-size: 1.05rem; line-height: 1.85; color: var(--ink);
     }
-    
-    .unconfirmed-banner {
-        background-color: #fefce8;
-        border-left: 5px solid #eab308;
-        color: #854d0e;
-        padding: 0.85rem;
-        border-radius: 0.5rem;
-        font-weight: 600;
-        margin-bottom: 1rem;
+
+    .proc-card {
+        background: var(--surface); border: 1px solid var(--rule); border-radius: 8px;
+        padding: 1.25rem 1.5rem; margin: 1rem 0;
+        display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;
     }
+    .proc-card h3 { margin: 0; font-size: 1.25rem; }
+    .proc-card .title { margin: 0.3rem 0 0.5rem 0; font-size: 0.9rem; color: var(--ink-muted); }
+    .proc-card .figure { font-size: 1.5rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .proc-card .caption { margin: 0; font-size: 0.75rem; color: var(--ink-muted); }
+
+    .chip {
+        display: inline-block; font-size: 0.75rem; font-weight: 600; padding: 0.15rem 0.5rem;
+        border-radius: 4px; background: var(--surface-sunken); color: var(--ink);
+    }
+
+    .law-card {
+        background: var(--surface); border: 1px solid var(--rule); border-radius: 8px;
+        padding: 1rem 1.1rem; margin-bottom: 0.6rem;
+    }
+    .law-card .head { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 0.5rem; }
+    .law-card h4 { margin: 0; font-family: var(--font-sans) !important; font-size: 1rem; font-weight: 700; }
+    .law-card .quote {
+        margin: 0.6rem 0 0 0; padding: 0.6rem 0.8rem; background: var(--ground); border-radius: 6px;
+        font-family: var(--font-serif); font-size: 0.85rem; line-height: 1.7; color: var(--ink);
+    }
+    .law-card .quote strong { display: block; font-family: var(--font-sans); font-size: 0.75rem; color: var(--ink-muted); margin-bottom: 0.2rem; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -128,21 +176,9 @@ if 'active_case_idx' not in st.session_state:
 # App Header
 st.markdown("""
 <div class="main-header">
-    <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 1rem;">
-        <div>
-            <h1 style="margin: 0; font-size: 1.6rem; font-weight: 800; color: white;">
-                ⚖️ የኢትዮጵያ ሰበር አስገዳጅ የሕግ ትርጓሜዎች መፈለጊያ እና ረዳት (Desktop App v2)
-            </h1>
-            <p style="margin: 0.3rem 0 0 0; font-size: 0.85rem; color: #94a3b8;">
-                የፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት ውሳኔዎች • ቅጽ 1 – 28፣ 7 ዳኞች ሰበር እና የ2015–2016 ስብስብ (3,246 አስገዳጅ ውሳኔዎች)
-            </p>
-        </div>
-        <div style="text-align: right;">
-            <span style="background: rgba(16, 185, 129, 0.2); color: #34d399; padding: 0.3rem 0.8rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700; border: 1px solid rgba(16, 185, 129, 0.4);">
-                🟢 Local Intelligence Engine Active (v2)
-            </span>
-        </div>
-    </div>
+    <p class="eyebrow">የፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት · FEDERAL SUPREME COURT CASSATION DIVISION</p>
+    <h1>የኢትዮጵያ ሰበር አስገዳጅ የሕግ ትርጓሜዎች መፈለጊያ እና ረዳት</h1>
+    <p>ቅጽ 1 – 28፣ 7 ዳኞች ሰበር እና የ2015–2016 ስብስብ · 3,246 አስገዳጅ ውሳኔዎች</p>
 </div>
 """, unsafe_allow_html=True)
 
@@ -316,21 +352,21 @@ with tab1:
             if active_c.get('status') == 'OVERRULED':
                 st.markdown(f"""
                 <div class="overruled-banner">
-                    ⚠️ <strong>የተሻረ ውሳኔ (OVERRULED PRECEDENT):</strong><br>
+                    <strong>የተሻረ ውሳኔ (OVERRULED PRECEDENT):</strong><br>
                     {active_c.get('status_note')}
                 </div>
                 """, unsafe_allow_html=True)
             elif active_c.get('status') == 'PLENARY_OVERRULING':
                 st.markdown(f"""
                 <div class="plenary-banner">
-                    ⭐ <strong>የሰበር ምልዓተ-ጉባዔ ታሪካዊ ውሳኔ (PLENARY OVERRULING):</strong><br>
+                    <strong>የሰበር ምልዓተ-ጉባዔ ታሪካዊ ውሳኔ (PLENARY OVERRULING):</strong><br>
                     {active_c.get('status_note')}
                 </div>
                 """, unsafe_allow_html=True)
             elif "7 ዳኞች" in str(active_c.get('bench', '')) or active_c.get('status') == 'PLENARY':
                 st.markdown(f"""
                 <div class="plenary-banner">
-                    ⭐ <strong>በ 7 ዳኞች ምልዓተ-ጉባዔ የተሰጠ አስገዳጅ ውሳኔ</strong>
+                    <strong>በ 7 ዳኞች ምልዓተ-ጉባዔ የተሰጠ አስገዳጅ ውሳኔ</strong>
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -338,7 +374,7 @@ with tab1:
             if "Not confirmed" in str(active_c.get('verification_status', '')):
                 st.markdown("""
                 <div class="unconfirmed-banner">
-                    ⚠️ <strong>በህትመቱ አልተረጋገጠም:</strong> ይህ መዝገብ ቁጥር ወይም ቅጽ በታተመው መጽሐፍ ማውጫ ውስጥ በግልጽ አልተረጋገጠም፤ ከመጥቀስዎ በፊት ህትመቱን ይመልከቱ።
+                    <strong>በህትመቱ አልተረጋገጠም:</strong> ይህ መዝገብ ቁጥር ወይም ቅጽ በታተመው መጽሐፍ ማውጫ ውስጥ በግልጽ አልተረጋገጠም፤ ከመጥቀስዎ በፊት ህትመቱን ይመልከቱ።
                 </div>
                 """, unsafe_allow_html=True)
 
@@ -362,7 +398,7 @@ with tab1:
 
             # Ratio Decidendi
             st.markdown("##### ⚖️ አስገዳጅ የሕግ ትርጓሜ (Authoritative Holding)")
-            st.markdown(f"```text\n{active_c.get('holding', '')}\n```")
+            st.markdown('<blockquote class="holding">' + html.escape(str(active_c.get('holding', ''))).replace('\n', '<br>') + '</blockquote>', unsafe_allow_html=True)
 
             # Statutory Provisions
             if active_c.get('provisions'):
@@ -577,7 +613,7 @@ with tab4:
         x='የሕግ ዘርፍ',
         y='የውሳኔዎች ብዛት',
         color='የውሳኔዎች ብዛት',
-        color_continuous_scale='Blues',
+        color_continuous_scale=['#e6f2ed', '#0b6b4f'],
         title="አስገዳጅ የሰበር ውሳኔዎች በሕግ ዘርፍ (Precedents by Subject - 3,246 Cases)"
     )
     st.plotly_chart(fig_subj, use_container_width=True)
@@ -645,19 +681,15 @@ with tab5:
 
         # Proclamation Header Card
         st.markdown(f"""
-        <div style="background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%); padding: 1.25rem; border-radius: 0.75rem; color: white; margin: 1rem 0;">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;">
-                <div>
-                    <h3 style="margin: 0; color: #60a5fa; font-size: 1.25rem;">📜 አዋጅ ቁጥር {selected_proc_no}</h3>
-                    <p style="margin: 0.35rem 0 0 0; font-size: 0.95rem; font-weight: 600;">{proc_entry['title']}</p>
-                    <span style="font-size: 0.8rem; background: rgba(59, 130, 246, 0.2); color: #93c5fd; padding: 0.2rem 0.6rem; border-radius: 9999px;">
-                        ዘርፍ፡ {proc_entry.get('subject', 'ጠቅላላ')}
-                    </span>
-                </div>
-                <div style="text-align: right; margin-top: 0.5rem;">
-                    <span style="font-size: 1.2rem; font-weight: 800; color: #34d399;">{proc_entry['total']}</span>
-                    <p style="margin: 0; font-size: 0.8rem; color: #94a3b8;">የተገኙ የበታች ሕጎች</p>
-                </div>
+        <div class="proc-card">
+            <div>
+                <h3>አዋጅ ቁጥር {selected_proc_no}</h3>
+                <p class="title">{proc_entry['title']}</p>
+                <span class="chip">ዘርፍ፡ {proc_entry.get('subject', 'ጠቅላላ')}</span>
+            </div>
+            <div style="text-align: right;">
+                <div class="figure">{proc_entry['total']}</div>
+                <p class="caption">የተገኙ የበታች ሕጎች</p>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -692,17 +724,13 @@ with tab5:
             for idx, (art_lbl, sub) in enumerate(matching_subordinates, 1):
                 with st.container():
                     st.markdown(f"""
-                    <div style="border: 1px solid #e2e8f0; border-left: 5px solid #3b82f6; border-radius: 0.5rem; padding: 1rem; margin-bottom: 0.85rem; background: #ffffff;">
-                        <div style="display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap;">
-                            <h4 style="margin: 0; color: #0f172a; font-size: 1.05rem;">
-                                {idx}. [{sub.get('type')}] {sub.get('title')}
-                            </h4>
-                            <span style="background: #e0f2fe; color: #0369a1; padding: 0.2rem 0.6rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 700;">
-                                {art_lbl}
-                            </span>
+                    <div class="law-card">
+                        <div class="head">
+                            <h4>{idx}. [{sub.get('type')}] {sub.get('title')}</h4>
+                            <span class="chip">{art_lbl}</span>
                         </div>
-                        <p style="margin: 0.5rem 0 0.5rem 0; font-size: 0.85rem; color: #475569; font-style: italic; background: #f8fafc; padding: 0.5rem; border-radius: 0.25rem;">
-                            <strong>የሥልጣን መነሻ ዐረፍተ-ነገር (Quoted Authority Clause):</strong><br>
+                        <p class="quote">
+                            <strong>የሥልጣን መነሻ ዐረፍተ-ነገር (Quoted Authority Clause)</strong>
                             "{sub.get('snippet', '-')}"
                         </p>
                     </div>
