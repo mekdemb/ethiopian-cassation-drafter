@@ -1562,7 +1562,7 @@
   {
     "id": "41872",
     "norm": "መመሪያ (Directive)",
-    "no": "1106/2017",
+    "no": "1107/2017",
     "year": "2017",
     "year_gc": "2025",
     "title_am": "የብሔራዊ ምክር ቤቱ የውስጥ አሠራር እና ከብሔራዊ የትብብር ጥምረቱ ጋር ስለሚኖረው የአሰራር ግንኙነት ለመወሰን በወጣ ረቂቅ መመሪያ ቁጥር 1106/2017 ላይ የተዘጋጀ ማብራሪያ",
@@ -1796,7 +1796,7 @@
   {
     "id": "41782",
     "norm": "መመሪያ (Directive)",
-    "no": "10965/2017",
+    "no": "1096/2017",
     "year": "2017",
     "year_gc": "2025",
     "title_am": "የሒሣብ እና የኦዲት ባለሙያዎች ፈቃድ አሰጣጥ እና የሒሣብ ሙያ ማኅበራት ምዝገባ መመሪያ ቁጥር 10965/2017 ላይ የቀረበ ማብራሪያ",
@@ -2559,19 +2559,6 @@
     "subject_am": "መሬት፣ ከተማ፣ ቤት እና ኮንስትራክሽን",
     "link": "https://drive.google.com/file/d/1agjW05SB4teSZO6Mv1zA1MyL2rZNUC2y/view",
     "size_mb": 1.16
-  },
-  {
-    "id": "40941",
-    "norm": "ደንብ (Regulation)",
-    "no": "559/2017",
-    "year": "2017",
-    "year_gc": "2025",
-    "title_am": "የኢሚግሬሽን የሚኒስትሮች ምክር ቤት ደንብ ቁጥር ፩፻፲፬ / ፩ሺ፱፻፺፯ን ለማሻሻል የወጣ ደንብ ቁጥር 559/2017",
-    "title_en": "Regulation No. 559/2025 Council of Ministers Regulation to Amendment for Immigration Regulation No. 114/2005",
-    "subject_en": "Land, Housing, Urban Dev & Construction",
-    "subject_am": "መሬት፣ ከተማ፣ ቤት እና ኮንስትራክሽን",
-    "link": "https://drive.google.com/file/d/11-qOU8KcL5Y_MBs3FNKD21b7HDU8kGQ_/view",
-    "size_mb": 0.8
   },
   {
     "id": "40936",
@@ -4652,19 +4639,6 @@
     "subject_am": "ሕገ-መንግሥት፣ አስተዳደር እና ተቋማት",
     "link": "https://drive.google.com/file/d/1jGJereIa9Xb8GU5155V7hr_BsoTViP6y/view",
     "size_mb": 0.6
-  },
-  {
-    "id": "37501",
-    "norm": "አዋጅ (Proclamation)",
-    "no": "686/2002",
-    "year": "2002",
-    "year_gc": "2010",
-    "title_am": "የንግድ ምዝገባና ፈቃድ አዋጅ ቁጥር 686/2ሺ2",
-    "title_en": "Commercial Registration and Business Licensing Proclamation No. 686/2010",
-    "subject_en": "Trade, Commercial Law & Investment",
-    "subject_am": "ንግድ፣ ኢንቨስትመንት እና ኢንዱስትሪ",
-    "link": "https://drive.google.com/file/d/1fDJE88zjoD7LauXvrAFuj2F9ROgsUGY4/view",
-    "size_mb": 0.22
   },
   {
     "id": "37496",
@@ -35358,19 +35332,6 @@
     "subject_am": "የመንግሥት በጀት፣ ፋይናንስ እና ብድር ማጽደቂያ",
     "link": "https://drive.google.com/file/d/1hbKWkX15S8695o5OwNQaxwYux_zZ8mmr/view",
     "size_mb": 0.1
-  },
-  {
-    "id": "6353",
-    "norm": "መመሪያ (Directive)",
-    "no": "288/2020",
-    "year": "2012",
-    "year_gc": "2020",
-    "title_am": "Legal Tender Protection (Directive No. 2882020)",
-    "title_en": "288 Legal Tender Protection (Directive No. 2882020)",
-    "subject_en": "Banking, Insurance & Capital Markets",
-    "subject_am": "ባንክ፣ ኢንሹራንስ እና ካፒታል ገበያ",
-    "link": "https://drive.google.com/file/d/1HJ2hzS-4RKXDpj9TAeTuD6CgCx73DYA0/view",
-    "size_mb": 0.98
   },
   {
     "id": "6226",
