@@ -454,7 +454,7 @@ for _k, _v in _DEFAULTS.items():
 
 # ---- Details to update by hand when they change ----
 APP_URL = "https://ethiopian-cassation-drafter.streamlit.app/"   # address used in "link to this decision"
-DATA_UPDATED = "11 November 2026"                                 # date the decisions database was last changed
+DATA_UPDATED = "15 November 2026"                                 # date the decisions database was last changed
 REPORT_EMAIL = "mekdemb@gmail.com"                                # where "report an error" emails go
 
 def move_draft(i, step):
