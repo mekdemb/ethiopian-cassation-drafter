@@ -142,6 +142,21 @@ st.markdown("""
     .st-key-mainnav div[role="radiogroup"] label p { color: var(--ink-muted); font-size: 0.85rem; }
     .st-key-mainnav div[role="radiogroup"] label:has(input:checked) { border-bottom-color: var(--accent); }
     .st-key-mainnav div[role="radiogroup"] label:has(input:checked) p { color: var(--accent); font-weight: 700; }
+
+    .block-container { padding-top: 2.75rem; }
+    .main-header.compact {
+        display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap;
+        gap: 0.6rem 1.5rem; padding: 0.85rem 1.25rem; margin-bottom: 0.75rem;
+    }
+    .main-header.compact h1 { font-size: 1.2rem; }
+    .main-header.compact .eyebrow { margin: 0 0 0.2rem 0; }
+    .main-header .stats { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; font-size: 0.8rem; color: var(--ink-on-dark-muted); }
+    .main-header .stats b { color: #ffffff; font-size: 0.95rem; font-variant-numeric: tabular-nums; margin-right: 0.25rem; }
+    .st-key-global_search input { font-size: 1rem; padding: 0.7rem 0.9rem; }
+    .start-panel { background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; padding: 1.5rem 1.75rem 0.75rem; margin-top: 0.5rem; }
+    .start-panel h3 { margin: 0 0 0.4rem 0; font-size: 1.35rem; }
+    .start-panel p { margin: 0 0 0.25rem 0; color: var(--ink-muted); font-size: 0.9rem; }
+    .section-label { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.06em; color: var(--ink-muted); margin: 1rem 0 0.4rem 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -401,6 +416,7 @@ if st.session_state.get('nav') not in TAB_NAMES:
 def open_case(pos):
     """Open one decision in the Precedents screen."""
     st.session_state.focus_pos = pos
+    st.session_state.browse_all = True     # "Back to results" then shows the list, not the start screen
     st.session_state.nav = TAB_NAMES[0]
 
 def show_citing(key):
@@ -416,78 +432,104 @@ def clear_citing():
 def clear_focus():
     st.session_state.focus_pos = None
 
-# App Header
-st.markdown("""
-<div class="main-header">
-    <p class="eyebrow">የፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት · FEDERAL SUPREME COURT CASSATION DIVISION</p>
-    <h1>የኢትዮጵያ ሰበር አስገዳጅ የሕግ ትርጓሜዎች መፈለጊያ እና ረዳት</h1>
-    <p>ቅጽ 1 – 28፣ 7 ዳኞች ሰበር እና የ2015–2016 ስብስብ · 3,246 አስገዳጅ ውሳኔዎች</p>
-</div>
-""", unsafe_allow_html=True)
+STATUS_OPTS = ["ሁሉንም ውሳኔዎች (All)", "✅ ጸንቶ የሚሰራ ብቻ (Valid)", "⭐ 7 ዳኞች ሰበር ብቻ (Plenary Bench)", "⚠️ የተሻሩ ውሳኔዎች ብቻ (Overruled Decisions)", "⚖️ የቀድሞ ውሳኔን የሻሩ ውሳኔዎች"]
+VERIFY_OPTS = ["ሁሉንም (All)", "✅ በህትመቱ የተረጋገጠ (Verified)", "📘 ከአዲስ ቅጽ የታከለ (Added)", "⚠️ ማጣራት የሚፈልግ (Check Required)"]
+PLEADING_TYPES = ["የሰበር አቤቱታ", "የመከላከያ መልስ", "የይግባኝ አቤቱታ", "የሕግ ማስታወሻ"]
 
-# Top KPI Metrics
-kpi1, kpi2, kpi3, kpi4, kpi5 = st.columns(5)
+# Settings that must be remembered while their controls are off screen
+_DEFAULTS = {
+    'search_q': "", 'lib_kw': "",
+    'f_subjects': [], 'f_volumes': [], 'f_status': STATUS_OPTS[0], 'f_verify': VERIFY_OPTS[0],
+    'p_court': "ለኢ.ፌ.ዴ.ሪ ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት", 'p_type': PLEADING_TYPES[0],
+    'p_app': "[የአመልካች ስም]", 'p_resp': "[የተጠሪ ስም]",
+    'browse_all': False,
+}
+for _k, _v in _DEFAULTS.items():
+    if _k not in st.session_state:
+        st.session_state[_k] = _v
+    else:
+        st.session_state[_k] = st.session_state[_k]   # keeps the value when its control is not shown
+
+def run_example(q):
+    """Start screen: run an example search."""
+    st.session_state.search_q = q
+    st.session_state.focus_pos = None
+    st.session_state.prov_filter = None
+
+def browse_status(option):
+    st.session_state.f_status = option
+
+def browse_everything():
+    st.session_state.browse_all = True
+
+def go_decisions():
+    st.session_state.focus_pos = None
+    st.session_state.nav = TAB_NAMES[0]
+
+def go_laws():
+    """Carry the search words over to the Laws Library."""
+    st.session_state.lib_kw = st.session_state.search_q
+    st.session_state.nav = TAB_NAMES[5]
+
+@st.cache_data
+def law_search_texts(_catalog):
+    return [normalize_amharic(" ".join(str(x.get(f, '')) for f in ('title_am', 'title_en', 'no', 'year', 'year_gc'))) for x in _catalog]
+
+# Counts shown in the header
 total_cases = len(cases_data)
-plenary_cases = len([c for c in cases_data if "7 ዳኞች" in str(c.get('bench', '')) or c.get('status') in ['PLENARY', 'PLENARY_OVERRULING']])
+# 7-Judges decisions, each counted once (three are printed in two volumes)
+plenary_cases = len({str(c.get('case_no') or c.get('entry_no')) for c in cases_data if "7 ዳኞች" in str(c.get('bench', '')) or c.get('status') in ['PLENARY', 'PLENARY_OVERRULING']})
 overruled_cases = len([c for c in cases_data if c.get('status') == 'OVERRULED'])
 verified_cases = len([c for c in cases_data if "Verified" in str(c.get('verification_status', ''))])
 selected_count = len(st.session_state.selected_for_draft)
 
-kpi1.metric("📚 ጠቅላላ ውሳኔዎች", f"{total_cases:,}")
-kpi2.metric("⭐ 7 ዳኞች ሰበር (ምልዓተ-ጉባዔ)", plenary_cases)
-kpi3.metric("⚠️ የተሻሩ የቀድሞ ውሳኔዎች", overruled_cases)
-kpi4.metric("✅ በህትመቱ የተረጋገጡ", f"{verified_cases:,}")
-kpi5.metric("📝 የተመረጡ ውሳኔዎች", selected_count)
+# App Header (compact, with the counts inside it)
+st.markdown(f"""
+<div class="main-header compact">
+    <div>
+        <p class="eyebrow">የፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት · FEDERAL SUPREME COURT CASSATION DIVISION</p>
+        <h1>የኢትዮጵያ ሰበር አስገዳጅ የሕግ ትርጓሜዎች መፈለጊያ እና ረዳት</h1>
+    </div>
+    <div class="stats">
+        <span><b>{total_cases:,}</b>ጠቅላላ ውሳኔዎች</span>
+        <span><b>{plenary_cases}</b>7 ዳኞች ሰበር</span>
+        <span><b>{overruled_cases}</b>የተሻሩ</span>
+        <span><b>{verified_cases:,}</b>በህትመቱ የተረጋገጡ</span>
+        <span><b>{selected_count}</b>የተመረጡ (Draft)</span>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
-# Sidebar Filters
-st.sidebar.header("🔍 የውሳኔዎች ፍተሻ እና አጣሪ")
+# One search box for decisions and laws
+with st.container(key="global_search"):
+    search_query = st.text_input(
+        "ሁሉን-አቀፍ ፍለጋ (Universal Search)",
+        key="search_q",
+        placeholder="ውሳኔዎችን እና ሕጎችን ይፈልጉ (Search decisions and laws): መዝገብ ቁጥር፣ ተከራካሪ፣ አንቀጽ ወይም ቃል...",
+        help="በመዝገብ ቁጥር (e.g. 18180, 242314), በአንቀጽ (1845, 1000) ወይም በሕግ ቃል ይፈልጉ",
+        label_visibility="collapsed",
+    )
 
-search_query = st.sidebar.text_input(
-    "ሁሉን-አቀፍ ፍለጋ (Universal Search)",
-    key="search_q",
-    placeholder="መዝገብ ቁጥር፣ ተከራካሪ፣ አንቀጽ ወይም ጭብጥ...",
-    help="በመዝገብ ቁጥር (e.g. 18180, 242314), በአንቀጽ (1845, 1000) ወይም በሕግ ቃል ይፈልጉ"
-)
-
-# Subjects filter
+# Filters for decisions: shown in the sidebar only on the Precedents screen
 all_subjects = sorted(list(set(c.get('legal_subject', 'ልዩ ልዩ') for c in cases_data)))
-selected_subjects = st.sidebar.multiselect(
-    "የሕግ ዘርፍ (Subject)",
-    options=all_subjects,
-    default=[]
-)
 
-# Volume filter
 def sort_vol_key(vol):
     m = re.search(r'\d+', vol)
     return int(m.group()) if m else 999
 
 all_volumes = sorted(list(set(c.get('volume', 'ሌሎች') for c in cases_data)), key=sort_vol_key)
-selected_volumes = st.sidebar.multiselect(
-    "ቅጽ / ምንጭ (Volume)",
-    options=all_volumes,
-    default=[]
-)
 
-# Status filter
-status_choice = st.sidebar.radio(
-    "የአስገዳጅነት ደረጃ (Status)",
-    options=["ሁሉንም ውሳኔዎች (All)", "✅ ጸንቶ የሚሰራ ብቻ (Valid)", "⭐ 7 ዳኞች ሰበር ብቻ (Plenary Bench)", "⚠️ የተሻሩ ውሳኔዎች ብቻ (Overruled Decisions)", "⚖️ የቀድሞ ውሳኔን የሻሩ ውሳኔዎች"]
-)
-
-# Verification filter
-verify_choice = st.sidebar.selectbox(
-    "የህትመት ማረጋገጫ (Verification)",
-    options=["ሁሉንም (All)", "✅ በህትመቱ የተረጋገጠ (Verified)", "📘 ከአዲስ ቅጽ የታከለ (Added)", "⚠️ ማጣራት የሚፈልግ (Check Required)"]
-)
-
-# Sidebar: Pleading Document Settings
-st.sidebar.markdown("---")
-st.sidebar.subheader("📝 የፍርድ ቤት አቤቱታ አዘጋጅ (Pleading Settings)")
-court_target = st.sidebar.text_input("የፍርድ ቤቱ ስም", value="ለኢ.ፌ.ዴ.ሪ ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት")
-pleading_type = st.sidebar.selectbox("የአቤቱታው ዓይነት", ["የሰበር አቤቱታ", "የመከላከያ መልስ", "የይግባኝ አቤቱታ", "የሕግ ማስታወሻ"])
-client_app = st.sidebar.text_input("አመልካች (Plaintiff/Petitioner)", value="[የአመልካች ስም]")
-client_resp = st.sidebar.text_input("ተጠሪ (Defendant/Respondent)", value="[የተጠሪ ስም]")
+if st.session_state.nav == TAB_NAMES[0]:
+    st.sidebar.header("የውሳኔዎች አጣሪ (Filters)")
+    selected_subjects = st.sidebar.multiselect("የሕግ ዘርፍ (Subject)", options=all_subjects, key="f_subjects")
+    selected_volumes = st.sidebar.multiselect("ቅጽ / ምንጭ (Volume)", options=all_volumes, key="f_volumes")
+    status_choice = st.sidebar.radio("የአስገዳጅነት ደረጃ (Status)", options=STATUS_OPTS, key="f_status")
+    verify_choice = st.sidebar.selectbox("የህትመት ማረጋገጫ (Verification)", options=VERIFY_OPTS, key="f_verify")
+else:
+    selected_subjects = st.session_state.f_subjects
+    selected_volumes = st.session_state.f_volumes
+    status_choice = st.session_state.f_status
+    verify_choice = st.session_state.f_verify
 
 # Filter Data
 norm_query = normalize_amharic(search_query)
@@ -555,6 +597,26 @@ if _num_terms:
     filtered_pos.sort(key=_exact_hits, reverse=True)
 filtered_cases = [cases_data[i] for i in filtered_pos]
 
+# Where the search found something: decisions and laws
+laws_catalog_all = load_laws_catalog()
+if terms and laws_catalog_all:
+    _law_texts = law_search_texts(laws_catalog_all)
+    law_hits = sum(1 for t in _law_texts if all(w in t for w in terms))
+else:
+    law_hits = 0
+if terms:
+    _s1, _s2, _s3 = st.columns([3, 3, 6])
+    _s1.button(f"ውሳኔዎች (Decisions): {len(filtered_cases):,}", on_click=go_decisions, key="go_decisions", use_container_width=True, disabled=not filtered_cases)
+    _s2.button(f"ሕጎች (Laws): {law_hits:,}", on_click=go_laws, key="go_laws", use_container_width=True, disabled=law_hits == 0)
+
+# A first visit with nothing searched or filtered shows a start screen
+show_start = (
+    not terms and not selected_subjects and not selected_volumes
+    and status_choice == STATUS_OPTS[0] and verify_choice == VERIFY_OPTS[0]
+    and not st.session_state.prov_filter and st.session_state.focus_pos is None
+    and not st.session_state.browse_all
+)
+
 # Tabs Interface
 with st.container(key="mainnav"):
     nav = st.radio("Screen", TAB_NAMES, horizontal=True, key="nav", label_visibility="collapsed")
@@ -562,7 +624,32 @@ with st.container(key="mainnav"):
 # ==========================================
 # TAB 1: SPLIT SCREEN RESEARCH & INSPECTOR
 # ==========================================
-if nav == TAB_NAMES[0]:
+if nav == TAB_NAMES[0] and show_start:
+    st.markdown("""
+    <div class="start-panel">
+        <h3>ምን መፈለግ ይፈልጋሉ? (What are you looking for?)</h3>
+        <p>በመዝገብ ቁጥር፣ በተከራካሪ ስም፣ በአንቀጽ ወይም በቃል ከላይ ባለው ሳጥን ይፈልጉ።</p>
+        <p>Type a file number, a party, an article or a word in the search box above. It searches decisions and laws together.</p>
+    </div>
+    """, unsafe_allow_html=True)
+    st.markdown('<p class="section-label">ለምሳሌ · FOR EXAMPLE</p>', unsafe_allow_html=True)
+    _examples = [
+        ("ይርጋ (Period of limitation)", "ይርጋ"),
+        ("ፍ/ብ/ሕ/ቁ 1845", "1845"),
+        ("መ/ቁ 242314", "242314"),
+        ("ኑዛዜ (Wills)", "ኑዛዜ"),
+        ("አዋጅ 377/96 (Labour)", "377/96"),
+    ]
+    _ec = st.columns(len(_examples))
+    for _j, (_lbl, _q) in enumerate(_examples):
+        _ec[_j].button(_lbl, on_click=run_example, args=(_q,), key=f"example_{_j}", use_container_width=True)
+    st.markdown('<p class="section-label">ወይም ይመልከቱ · OR BROWSE</p>', unsafe_allow_html=True)
+    _bc = st.columns(3)
+    _bc[0].button("የ7 ዳኞች ሰበር ውሳኔዎች (7-Judges rulings)", on_click=browse_status, args=(STATUS_OPTS[2],), key="browse_plenary", use_container_width=True)
+    _bc[1].button("የተሻሩ ውሳኔዎች (Overruled decisions)", on_click=browse_status, args=(STATUS_OPTS[3],), key="browse_overruled", use_container_width=True)
+    _bc[2].button("ሁሉንም ውሳኔዎች አሳይ (Show all decisions)", on_click=browse_everything, key="browse_all_btn", use_container_width=True)
+
+if nav == TAB_NAMES[0] and not show_start:
     if st.session_state.prov_filter:
         _fb1, _fb2 = st.columns([8, 2])
         with _fb1:
@@ -745,6 +832,15 @@ if nav == TAB_NAMES[0]:
 if nav == TAB_NAMES[1]:
     st.subheader("📝 የፍርድ ቤት አቤቱታ እና ማጣቀሻ አዘጋጅ (Microsoft Word Drafter)")
     st.write("በምርምር ክፍል የመረጧቸውን አስገዳጅ ውሳኔዎች በማካተት የተሟላ **የፍርድ ቤት አቤቱታ የሕግ ማጣቀሻ ሰነድ (.docx)** በቀጥታ ማመንጨት ይችላሉ።")
+
+    st.markdown('<p class="section-label">የአቤቱታው ዝርዝር · PLEADING SETTINGS</p>', unsafe_allow_html=True)
+    _p1, _p2 = st.columns([6, 4])
+    court_target = _p1.text_input("የፍርድ ቤቱ ስም", key="p_court")
+    pleading_type = _p2.selectbox("የአቤቱታው ዓይነት", PLEADING_TYPES, key="p_type")
+    _p3, _p4 = st.columns(2)
+    client_app = _p3.text_input("አመልካች (Plaintiff/Petitioner)", key="p_app")
+    client_resp = _p4.text_input("ተጠሪ (Defendant/Respondent)", key="p_resp")
+    st.markdown("---")
 
     if not st.session_state.selected_for_draft:
         st.info("💡 በአሁኑ ሰዓት የተመረጠ ውሳኔ የለም። በትር 1 (Research) ውስጥ የሚፈልጓቸውን ውሳኔዎች መርጠው **'ወደ አቤቱታ ረቂቅ ጨምር'** የሚለውን ይጫኑ።")
@@ -1224,7 +1320,7 @@ if nav == TAB_NAMES[5]:
             )
 
         with l_f3:
-            law_search_kw = st.text_input("የሕግ ቁጥር ወይም ቃል ፍለጋ:", placeholder="ምሳሌ፡ 1333, 1094, ታክስ, መሬት, ግዥ...")
+            law_search_kw = st.text_input("የሕግ ቁጥር ወይም ቃል ፍለጋ:", key="lib_kw", placeholder="ምሳሌ፡ 1333, 1094, ታክስ, መሬት, ግዥ...")
 
         # Filter application
         filtered_catalog = laws_catalog
@@ -1244,15 +1340,10 @@ if nav == TAB_NAMES[5]:
             filtered_catalog = [x for x in filtered_catalog if "ጠቅላላ ሰነድ" in x.get('norm', '') or "General Document" in x.get('norm', '')]
 
         if law_search_kw:
-            kw_n = normalize_amharic(law_search_kw)
-            filtered_catalog = [
-                x for x in filtered_catalog
-                if kw_n in normalize_amharic(x.get('title_am', '')) 
-                or kw_n in normalize_amharic(x.get('title_en', '')) 
-                or kw_n in str(x.get('no', ''))
-                or kw_n in str(x.get('year', ''))
-                or kw_n in str(x.get('year_gc', ''))
-            ]
+            _words = normalize_amharic(law_search_kw).split()
+            def _law_text(x):
+                return normalize_amharic(" ".join(str(x.get(f, '')) for f in ('title_am', 'title_en', 'no', 'year', 'year_gc')))
+            filtered_catalog = [x for x in filtered_catalog if all(w in _law_text(x) for w in _words)]
 
         st.markdown(f"##### የተገኙ ሕጎች ዝርዝር (`{len(filtered_catalog):,}`)፡")
 
