@@ -3,6 +3,8 @@ import html
 import json
 import os
 import re
+import datetime
+from urllib.parse import quote, urlsplit
 import pandas as pd
 import plotly.express as px
 from io import BytesIO
@@ -432,8 +434,8 @@ def clear_citing():
 def clear_focus():
     st.session_state.focus_pos = None
 
-STATUS_OPTS = ["ሁሉንም ውሳኔዎች (All)", "✅ ጸንቶ የሚሰራ ብቻ (Valid)", "⭐ 7 ዳኞች ሰበር ብቻ (Plenary Bench)", "⚠️ የተሻሩ ውሳኔዎች ብቻ (Overruled Decisions)", "⚖️ የቀድሞ ውሳኔን የሻሩ ውሳኔዎች"]
-VERIFY_OPTS = ["ሁሉንም (All)", "✅ በህትመቱ የተረጋገጠ (Verified)", "📘 ከአዲስ ቅጽ የታከለ (Added)", "⚠️ ማጣራት የሚፈልግ (Check Required)"]
+STATUS_OPTS = ["ሁሉንም ውሳኔዎች (All)", "ጸንቶ የሚሰራ ብቻ (Valid)", "7 ዳኞች ሰበር ብቻ (Plenary Bench)", "የተሻሩ ውሳኔዎች ብቻ (Overruled Decisions)", "የቀድሞ ውሳኔን የሻሩ ውሳኔዎች"]
+VERIFY_OPTS = ["ሁሉንም (All)", "በህትመቱ የተረጋገጠ (Verified)", "ከአዲስ ቅጽ የታከለ (Added)", "ማጣራት የሚፈልግ (Check Required)"]
 PLEADING_TYPES = ["የሰበር አቤቱታ", "የመከላከያ መልስ", "የይግባኝ አቤቱታ", "የሕግ ማስታወሻ"]
 
 # Settings that must be remembered while their controls are off screen
@@ -449,6 +451,61 @@ for _k, _v in _DEFAULTS.items():
         st.session_state[_k] = _v
     else:
         st.session_state[_k] = st.session_state[_k]   # keeps the value when its control is not shown
+
+# ---- Details to update by hand when they change ----
+APP_URL = "https://ethiopian-cassation-drafter.streamlit.app/"   # address used in "link to this decision"
+DATA_UPDATED = "11 November 2026"                                 # date the decisions database was last changed
+REPORT_EMAIL = "mekdemb@gmail.com"                                # where "report an error" emails go
+
+def move_draft(i, step):
+    """Drafter: move a selected precedent up or down."""
+    lst = st.session_state.selected_for_draft
+    j = i + step
+    if 0 <= i < len(lst) and 0 <= j < len(lst):
+        lst[i], lst[j] = lst[j], lst[i]
+
+def remove_draft(i):
+    lst = st.session_state.selected_for_draft
+    if 0 <= i < len(lst):
+        lst.pop(i)
+
+def load_draft():
+    """Drafter: restore a selection saved earlier with 'Save draft'."""
+    f = st.session_state.get('draft_upload')
+    if f is None:
+        return
+    try:
+        data = json.loads(f.getvalue().decode('utf-8'))
+        by_entry = {str(c.get('entry_no')): c for c in cases_data}
+        picked = [by_entry[str(e)] for e in data.get('entries', []) if str(e) in by_entry]
+        st.session_state.selected_for_draft = picked
+        if data.get('court'):
+            st.session_state.p_court = str(data['court'])
+        if data.get('type') in PLEADING_TYPES:
+            st.session_state.p_type = data['type']
+        if data.get('applicant'):
+            st.session_state.p_app = str(data['applicant'])
+        if data.get('respondent'):
+            st.session_state.p_resp = str(data['respondent'])
+        st.session_state.draft_msg = ('ok', len(picked))
+    except Exception:
+        st.session_state.draft_msg = ('error', 0)
+
+if not st.session_state.get('link_done'):
+    st.session_state.link_done = True
+    _qc, _qe = st.query_params.get('case'), st.query_params.get('e')
+    if _qc or _qe:
+        _hit = None
+        if _qe:
+            _hit = next((i for i, c in enumerate(cases_data) if str(c.get('entry_no')) == str(_qe)), None)
+        if _hit is None and _qc:
+            _hit = next((i for i, c in enumerate(cases_data) if str(c.get('case_no')) == str(_qc)), None)
+        if _hit is not None:
+            st.session_state.focus_pos = _hit
+            st.session_state.browse_all = True
+            st.session_state.nav = TAB_NAMES[0]
+
+shown_case = None   # the decision on screen, if any (keeps the address bar in step)
 
 def run_example(q):
     """Start screen: run an example search."""
@@ -541,26 +598,26 @@ def filter_case(c):
     if selected_volumes and c.get('volume') not in selected_volumes:
         return False
         
-    if status_choice == "✅ ጸንቶ የሚሰራ ብቻ (Valid)":
+    if status_choice == "ጸንቶ የሚሰራ ብቻ (Valid)":
         if c.get('status') != 'VALID':
             return False
-    elif status_choice == "⭐ 7 ዳኞች ሰበር ብቻ (Plenary Bench)":
+    elif status_choice == "7 ዳኞች ሰበር ብቻ (Plenary Bench)":
         if "7 ዳኞች" not in str(c.get('bench', '')) and c.get('status') not in ['PLENARY', 'PLENARY_OVERRULING']:
             return False
-    elif status_choice == "⚠️ የተሻሩ ውሳኔዎች ብቻ (Overruled Decisions)":
+    elif status_choice == "የተሻሩ ውሳኔዎች ብቻ (Overruled Decisions)":
         if c.get('status') != 'OVERRULED':
             return False
-    elif status_choice == "⚖️ የቀድሞ ውሳኔን የሻሩ ውሳኔዎች":
+    elif status_choice == "የቀድሞ ውሳኔን የሻሩ ውሳኔዎች":
         if c.get('status') != 'PLENARY_OVERRULING':
             return False
 
-    if verify_choice == "✅ በህትመቱ የተረጋገጠ (Verified)":
+    if verify_choice == "በህትመቱ የተረጋገጠ (Verified)":
         if "Verified" not in str(c.get('verification_status', '')):
             return False
-    elif verify_choice == "📘 ከአዲስ ቅጽ የታከለ (Added)":
+    elif verify_choice == "ከአዲስ ቅጽ የታከለ (Added)":
         if "Added" not in str(c.get('verification_status', '')):
             return False
-    elif verify_choice == "⚠️ ማጣራት የሚፈልግ (Check Required)":
+    elif verify_choice == "ማጣራት የሚፈልግ (Check Required)":
         if "Not confirmed" not in str(c.get('verification_status', '')):
             return False
             
@@ -661,7 +718,7 @@ if nav == TAB_NAMES[0] and not show_start:
     col_left, col_right = st.columns([5, 7])
     
     with col_left:
-        st.subheader("📋 የውሳኔዎች ዝርዝር")
+        st.subheader("የውሳኔዎች ዝርዝር")
         
         def _short(text, n=150):
             t = " ".join(str(text or "").split())
@@ -718,7 +775,7 @@ if nav == TAB_NAMES[0] and not show_start:
             
             # Case Header Card
             case_no_disp = active_c.get('case_no') or f"የመዝገብ ቁጥር ያልተረጋገጠ [ተ.ቁ {active_c.get('entry_no')}]"
-            st.subheader(f"📖 ሰበር መዝገብ ቁጥር {case_no_disp}")
+            st.subheader(f"ሰበር መዝገብ ቁጥር {case_no_disp}")
             
             # Status Alerts
             if active_c.get('status') == 'OVERRULED':
@@ -783,16 +840,16 @@ if nav == TAB_NAMES[0] and not show_start:
             st.write(f"**ተጠሪ:** {active_c.get('respondent', '-')}")
 
             # Legal Issue
-            st.markdown("##### 📌 የተያዘው ጭብጥ (Legal Issue)")
+            st.markdown("##### የተያዘው ጭብጥ (Legal Issue)")
             st.markdown('<div class="issue-box">' + highlight_html(active_c.get('legal_issue', 'የሕግ ትርጓሜ'), terms) + '</div>', unsafe_allow_html=True)
 
             # Ratio Decidendi
-            st.markdown("##### ⚖️ አስገዳጅ የሕግ ትርጓሜ (Authoritative Holding)")
+            st.markdown("##### አስገዳጅ የሕግ ትርጓሜ (Authoritative Holding)")
             st.markdown('<blockquote class="holding">' + highlight_html(active_c.get('holding', ''), terms) + '</blockquote>', unsafe_allow_html=True)
 
             # Statutory Provisions
             if active_c.get('provisions'):
-                st.markdown(f"**📜 የተተረጎሙ ድንጋጌዎች:** `{active_c.get('provisions')}`")
+                st.markdown(f"**የተተረጎሙ ድንጋጌዎች:** `{active_c.get('provisions')}`")
                 _keys = [k for k in case_links[active_pos] if len(link_index.get(k, [])) > 1][:12]
                 if _keys:
                     st.caption("ተመሳሳይ ድንጋጌ የተረጎሙ ሌሎች ውሳኔዎች (Other decisions on the same provision):")
@@ -803,7 +860,7 @@ if nav == TAB_NAMES[0] and not show_start:
 
             # Provenance & Correction Notes
             if active_c.get('source') or active_c.get('notes'):
-                with st.expander("ℹ️ የመረጃው ምንጭ እና የማረጋገጫ ማስታወሻ (Provenance & Notes)", expanded=False):
+                with st.expander("የመረጃው ምንጭ እና የማረጋገጫ ማስታወሻ (Provenance & Notes)", expanded=False):
                     if active_c.get('source'):
                         st.write(f"**ምንጭ:** {active_c.get('source')}")
                     if active_c.get('notes'):
@@ -814,23 +871,43 @@ if nav == TAB_NAMES[0] and not show_start:
             with b1:
                 page_str = f"፣ ገጽ {active_c.get('page_in_vol')}" if active_c.get('page_in_vol') else ""
                 formal_cite = f"በፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት በመዝገብ ቁጥር {active_c.get('case_no')}፣ {active_c.get('volume')}{page_str} ({active_c.get('bench')})፣ አመልካች {active_c.get('applicant')} እና ተጠሪ {active_c.get('respondent')} በተወሰነው አስገዳጅ ውሳኔ መሠረት..."
-                st.text_area("📋 የፍርድ ቤት ጥቅስ (Formal Citation):", value=formal_cite, height=75)
+                st.text_area("የፍርድ ቤት ጥቅስ (Formal Citation):", value=formal_cite, height=75)
             with b2:
                 c_no = str(active_c.get('case_no') or active_c.get('entry_no'))
                 if c_no in [str(c.get('case_no') or c.get('entry_no')) for c in st.session_state.selected_for_draft]:
-                    if st.button("➖ ከአቤቱታ ረቂቅ አስወግድ (Remove from Draft)"):
+                    if st.button("− ከአቤቱታ ረቂቅ አስወግድ (Remove from Draft)"):
                         st.session_state.selected_for_draft = [c for c in st.session_state.selected_for_draft if str(c.get('case_no') or c.get('entry_no')) != c_no]
                         st.rerun()
                 else:
-                    if st.button("➕ ወደ አቤቱታ ረቂቅ ጨምር (Add to Draft)"):
+                    if st.button("+ ወደ አቤቱታ ረቂቅ ጨምር (Add to Draft)"):
                         st.session_state.selected_for_draft.append(active_c)
                         st.rerun()
+
+            # Link to this decision, data date, report an error
+            shown_case = active_c
+            try:
+                _parts = urlsplit(st.context.url)
+                if not _parts.netloc:
+                    _base = APP_URL
+                elif _parts.netloc.endswith(".streamlit.app"):
+                    _base = f"https://{_parts.netloc}/"
+                else:
+                    _base = f"{_parts.scheme}://{_parts.netloc}{_parts.path or '/'}"
+            except Exception:
+                _base = APP_URL
+            _cn, _en = active_c.get('case_no'), active_c.get('entry_no')
+            _link = f"{_base}?case={quote(str(_cn))}&e={_en}" if _cn else f"{_base}?e={_en}"
+            st.caption("የዚህ ውሳኔ ማስፈንጠሪያ (Link to this decision) — ለመቅዳት በቀኝ ያለውን ምልክት ይጫኑ (use the copy button on the right):")
+            st.code(_link, language=None)
+            _subject = quote(f"Cassation database: error in File {_cn or '-'} (entry {_en})")
+            _body = quote(f"File no.: {_cn or '-'}\nEntry no.: {_en}\nVolume: {active_c.get('volume')}\n\nWhat is wrong:\n")
+            st.caption(f"የመረጃ ቋቱ የመጨረሻ ማሻሻያ (Database last updated): {DATA_UPDATED} · [ስህተት ያሳውቁ (Report an error)](mailto:{REPORT_EMAIL}?subject={_subject}&body={_body})")
 
 # ==========================================
 # TAB 2: AUTOMATED WORD PLEADING DRAFTER
 # ==========================================
 if nav == TAB_NAMES[1]:
-    st.subheader("📝 የፍርድ ቤት አቤቱታ እና ማጣቀሻ አዘጋጅ (Microsoft Word Drafter)")
+    st.subheader("የፍርድ ቤት አቤቱታ እና ማጣቀሻ አዘጋጅ (Microsoft Word Drafter)")
     st.write("በምርምር ክፍል የመረጧቸውን አስገዳጅ ውሳኔዎች በማካተት የተሟላ **የፍርድ ቤት አቤቱታ የሕግ ማጣቀሻ ሰነድ (.docx)** በቀጥታ ማመንጨት ይችላሉ።")
 
     st.markdown('<p class="section-label">የአቤቱታው ዝርዝር · PLEADING SETTINGS</p>', unsafe_allow_html=True)
@@ -840,19 +917,44 @@ if nav == TAB_NAMES[1]:
     _p3, _p4 = st.columns(2)
     client_app = _p3.text_input("አመልካች (Plaintiff/Petitioner)", key="p_app")
     client_resp = _p4.text_input("ተጠሪ (Defendant/Respondent)", key="p_resp")
+
+    st.markdown('<p class="section-label">ረቂቁን ማስቀመጥ · SAVE OR LOAD A DRAFT</p>', unsafe_allow_html=True)
+    _d1, _d2 = st.columns([4, 6])
+    with _d1:
+        _saved = json.dumps({
+            "app": "ethiopian-cassation-drafter",
+            "saved": datetime.date.today().isoformat(),
+            "entries": [c.get('entry_no') for c in st.session_state.selected_for_draft],
+            "court": court_target, "type": pleading_type,
+            "applicant": client_app, "respondent": client_resp,
+        }, ensure_ascii=False, indent=2)
+        st.download_button(
+            "ረቂቁን አስቀምጥ (Save draft)", data=_saved.encode('utf-8'),
+            file_name=f"cassation_draft_{datetime.date.today().isoformat()}.json", mime="application/json",
+            disabled=not st.session_state.selected_for_draft, use_container_width=True, key="draft_save",
+        )
+        st.caption("የተመረጡ ውሳኔዎችን እና ዝርዝሩን በፋይል ያስቀምጣል (Saves the selected decisions and the settings as a file).")
+    with _d2:
+        st.file_uploader("የተቀመጠ ረቂቅ ክፈት (Load a saved draft)", type=["json"], key="draft_upload", on_change=load_draft)
+    _msg = st.session_state.pop('draft_msg', None)
+    if _msg and _msg[0] == 'ok':
+        st.success(f"{_msg[1]} ውሳኔዎች ተጭነዋል ({_msg[1]} decisions loaded).")
+    elif _msg:
+        st.error("ፋይሉ ሊነበብ አልቻለም (The file could not be read). Use a file saved with 'Save draft'.")
     st.markdown("---")
 
     if not st.session_state.selected_for_draft:
-        st.info("💡 በአሁኑ ሰዓት የተመረጠ ውሳኔ የለም። በትር 1 (Research) ውስጥ የሚፈልጓቸውን ውሳኔዎች መርጠው **'ወደ አቤቱታ ረቂቅ ጨምር'** የሚለውን ይጫኑ።")
+        st.info("በአሁኑ ሰዓት የተመረጠ ውሳኔ የለም። በትር 1 (Research) ውስጥ የሚፈልጓቸውን ውሳኔዎች መርጠው **'ወደ አቤቱታ ረቂቅ ጨምር'** የሚለውን ይጫኑ።")
     else:
         st.write(f"**የተመረጡ አስገዳጅ ውሳኔዎች ({len(st.session_state.selected_for_draft)}):**")
         
+        _n_sel = len(st.session_state.selected_for_draft)
         for i, sc in enumerate(st.session_state.selected_for_draft):
-            c_col1, c_col2 = st.columns([9, 1])
-            c_col1.write(f"**{i+1}. መ/ቁ {sc.get('case_no') or f'[Entry {sc.get('entry_no')}]'}** ({sc.get('volume')}) — {str(sc.get('legal_issue'))[:80]}...")
-            if c_col2.button("❌", key=f"del_{i}"):
-                st.session_state.selected_for_draft.pop(i)
-                st.rerun()
+            c_col1, c_up, c_down, c_del = st.columns([17, 1, 1, 1])
+            c_col1.write(f"**{i+1}. መ/ቁ {sc.get('case_no') or f'[Entry {sc.get('entry_no')}]'}** ({sc.get('volume')}) — {str(sc.get('legal_issue'))[:110]}")
+            c_up.button("↑", key=f"up_{i}", on_click=move_draft, args=(i, -1), disabled=i == 0, help="ወደ ላይ (Move up)")
+            c_down.button("↓", key=f"down_{i}", on_click=move_draft, args=(i, 1), disabled=i == _n_sel - 1, help="ወደ ታች (Move down)")
+            c_del.button("×", key=f"del_{i}", on_click=remove_draft, args=(i,), help="አስወግድ (Remove)")
 
         def generate_docx():
             doc = docx.Document()
@@ -931,7 +1033,7 @@ if nav == TAB_NAMES[1]:
                 
                 holding_str = str(sc.get('holding'))
                 if sc.get('status') == 'OVERRULED':
-                    holding_str = f"[⚠️ ይህ ውሳኔ በ 7 ዳኞች ሰበር ተሽሯል!]\n" + holding_str
+                    holding_str = f"[ይህ ውሳኔ በ 7 ዳኞች ሰበር ተሽሯል!]\n" + holding_str
                 row_cells[4].text = holding_str
 
                 for c_idx in range(5):
@@ -955,7 +1057,7 @@ if nav == TAB_NAMES[1]:
 
         docx_bio = generate_docx()
         st.download_button(
-            label="📥 ይፋዊ የፍርድ ቤት አቤቱታ ሰነድ አውርድ (.docx)",
+            label="ይፋዊ የፍርድ ቤት አቤቱታ ሰነድ አውርድ (.docx)",
             data=docx_bio,
             file_name=f"Ethiopian_Cassation_Brief_{pleading_type}_{client_app[:15]}.docx",
             mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -965,11 +1067,11 @@ if nav == TAB_NAMES[1]:
 # TAB 3: SHEPARD'S OVERRULE MAP
 # ==========================================
 if nav == TAB_NAMES[2]:
-    st.subheader("⚖️ የተሻሩ ውሳኔዎች እና የ 7 ዳኞች አስገዳጅ ውሳኔዎች ማውጫ (Shepard's Citator)")
+    st.subheader("የተሻሩ ውሳኔዎች እና የ 7 ዳኞች አስገዳጅ ውሳኔዎች ማውጫ (Shepard's Citator)")
     st.write("በአዋጅ ቁጥር 1234/2013 አንቀጽ 10(4) እና 26(1) መሠረት በሰባት (7) ዳኞች የተሰየመው የሰበር ሰሚ ችሎት የቀድሞ ባለ 5 ዳኞች ውሳኔዎችን የመሻር እና የመለወጥ ስልጣን ተሰጥቶታል፡፡")
 
     ov_cases = [c for c in cases_data if c.get('status') == 'OVERRULED']
-    st.markdown(f"#### ⚠️ የተሻሩ/የተለወጡ ውሳኔዎች ዝርዝር ({len(ov_cases)})")
+    st.markdown(f"#### የተሻሩ/የተለወጡ ውሳኔዎች ዝርዝር ({len(ov_cases)})")
     
     df_ov = pd.DataFrame([
         {
@@ -985,7 +1087,7 @@ if nav == TAB_NAMES[2]:
     st.dataframe(df_ov, use_container_width=True)
 
     st.markdown("---")
-    st.markdown("#### ⭐ የቀድሞ ውሳኔዎችን የሻሩ እና ያረጋገጡ የ 7 ዳኞች ታሪካዊ ውሳኔዎች")
+    st.markdown("#### የቀድሞ ውሳኔዎችን የሻሩ እና ያረጋገጡ የ 7 ዳኞች ታሪካዊ ውሳኔዎች")
     
     plen_cases = [c for c in cases_data if c.get('status') in ['PLENARY_OVERRULING', 'PLENARY']]
     df_plen = pd.DataFrame([
@@ -1002,13 +1104,13 @@ if nav == TAB_NAMES[2]:
     ])
     st.dataframe(df_plen, use_container_width=True)
 
-    st.info("💡 **ልዩ የሕግ ማስታወሻ:** በሰባት ዳኞች ሰበር መ/ቁ 237423 (የካቲት 29/2016 ዓ.ም) በተሰጠ ውሳኔ መ/ቁ 48850፣ 58008፣ 74237፣ 94913፣ 102640 እና 218957 የቀረበውን የመሻር ጥያቄ ውድቅ በማድረግ ውሳኔዎቹ ጸንተው እንዲቀጥሉ ወስኗል።")
+    st.info("**ልዩ የሕግ ማስታወሻ:** በሰባት ዳኞች ሰበር መ/ቁ 237423 (የካቲት 29/2016 ዓ.ም) በተሰጠ ውሳኔ መ/ቁ 48850፣ 58008፣ 74237፣ 94913፣ 102640 እና 218957 የቀረበውን የመሻር ጥያቄ ውድቅ በማድረግ ውሳኔዎቹ ጸንተው እንዲቀጥሉ ወስኗል።")
 
 # ==========================================
 # TAB 4: 20-YEAR JUDICIAL ANALYTICS
 # ==========================================
 if nav == TAB_NAMES[3]:
-    st.subheader("📊 የ 20 ዓመታት የሰበር አስገዳጅ ውሳኔዎች ትንተና (1997 - 2017 ዓ.ም)")
+    st.subheader("የ 20 ዓመታት የሰበር አስገዳጅ ውሳኔዎች ትንተና (1997 - 2017 ዓ.ም)")
     
     # 1. Subject distribution
     subj_counts = pd.Series([c.get('legal_subject') for c in cases_data]).value_counts().reset_index()
@@ -1404,3 +1506,12 @@ if nav == TAB_NAMES[5]:
                                 _l1.write(f"**መ/ቁ {_c.get('case_no') or '-'}** ({_c.get('volume')}) — {' '.join(str(_c.get('legal_issue') or '').split())[:140]}")
                                 _l2.button("ክፈት (Open)", on_click=open_case, args=(_p,), key=f"lib_open_{law.get('id')}_{idx}_{_p}")
                     st.write("")
+
+# Keep the address bar in step with the decision on screen, so the page address can be shared
+_want = {}
+if shown_case is not None:
+    if shown_case.get('case_no'):
+        _want['case'] = str(shown_case.get('case_no'))
+    _want['e'] = str(shown_case.get('entry_no'))
+if dict(st.query_params) != _want:
+    st.query_params.from_dict(_want)
