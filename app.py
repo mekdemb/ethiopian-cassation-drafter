@@ -262,46 +262,189 @@ def load_volume_drive_map():
 
 volume_drive_map = load_volume_drive_map()
 
+LEGAL_BILINGUAL_DICT = {
+    # Tax & Finance
+    'tax': ['ታክስ', 'ግብር', 'ገቢ ግብር'],
+    'taxes': ['ታክስ', 'ግብር'],
+    'taxation': ['ታክስ', 'ግብር'],
+    'withholding': ['ተቀናሽ', 'በምንጭ ተቀናሽ', 'ቅናሽ'],
+    'withhold': ['ተቀናሽ', 'ማስቀረት'],
+    'vat': ['ቫት', 'የተጨማሪ እሴት ታክስ'],
+    'tot': ['ተርን ኦቨር', 'የተርን ኦቨር ታክስ'],
+    'customs': ['ጉምሩክ', 'ቀረጥ'],
+    'duty': ['ቀረጥ'],
+    # Tenancy & Property
+    'tenant': ['ተከራይ', 'ኪራይ'],
+    'tenants': ['ተከራይ', 'ኪራይ'],
+    'landlord': ['አከራይ', 'ኪራይ'],
+    'landlords': ['አከራይ', 'ኪራይ'],
+    'rent': ['ኪራይ'],
+    'rental': ['ኪራይ'],
+    'lease': ['ኪራይ', 'ሊዝ'],
+    'eviction': ['ማስለቀቅ', 'መልቀቅ'],
+    'evict': ['ማስለቀቅ'],
+    'house': ['ቤት'],
+    'building': ['ህንፃ', 'ቤት'],
+    'property': ['ንብረት', 'የማይንቀሳቀስ ንብረት'],
+    'land': ['መሬት', 'ይዞታ'],
+    'ownership': ['ባለቤትነት'],
+    'possession': ['ይዞታ'],
+    # Labor & Employment
+    'labor': ['አሰሪና ሠራተኛ', 'ሠራተኛ'],
+    'employment': ['አሰሪና ሠራተኛ', 'ቅጥር'],
+    'employee': ['ሠራተኛ'],
+    'employees': ['ሠራተኛ'],
+    'employer': ['አሰሪ'],
+    'employers': ['አሰሪ'],
+    'severance': ['ስንብት', 'የስንብት ክፍያ'],
+    'dismissal': ['ስንብት', 'ከስራ ማሰናበት'],
+    'probation': ['የሙከራ ጊዜ'],
+    'termination': ['የውል መቋረጥ', 'ስንብት'],
+    'wages': ['ደመወዝ'],
+    'salary': ['ደመወዝ'],
+    # Contract Law
+    'contract': ['ውል'],
+    'contracts': ['ውል'],
+    'agreement': ['ውል', 'ስምምነት'],
+    'breach': ['ውል ማፍረስ', 'የውል መቋረጥ'],
+    'damages': ['ካሳ', 'ጉዳት'],
+    'compensation': ['ካሳ'],
+    'obligation': ['ግዴታ'],
+    'performance': ['ግዴታን መወጣት', 'ውል'],
+    # Limitation / Prescription
+    'limitation': ['ይርጋ', 'የይርጋ ጊዜ'],
+    'prescription': ['ይርጋ'],
+    'period': ['ይርጋ', 'ጊዜ'],
+    # Family & Succession
+    'marriage': ['ጋብቻ'],
+    'divorce': ['ፍቺ'],
+    'spouse': ['ባልና ሚስት', 'የትዳር አጋር'],
+    'alimony': ['ቀለብ'],
+    'maintenance': ['ቀለብ', 'አስተዳደግ'],
+    'custody': ['አስተዳደግ', 'የልጆች አስተዳደግ'],
+    'inheritance': ['ውርስ'],
+    'succession': ['ውርስ', 'የውርስ ሀብት'],
+    'will': ['ኑዛዜ'],
+    'testament': ['ኑዛዜ'],
+    'heir': ['ወራሽ'],
+    'heirs': ['ወራሽ'],
+    # Banking, Debt & Commerce
+    'loan': ['ብድር', 'ዕዳ'],
+    'debt': ['ዕዳ', 'ባለዕዳ'],
+    'debtor': ['ባለዕዳ'],
+    'creditor': ['ባለገንዘብ'],
+    'mortgage': ['መያዣ', 'የማይንቀሳቀስ ንብረት መያዣ'],
+    'pledge': ['መያዣ'],
+    'guarantor': ['ዋስ', 'ዋስትና'],
+    'guarantee': ['ዋስትና'],
+    'check': ['ቼክ'],
+    'cheque': ['ቼክ'],
+    'share': ['አክሲዮን'],
+    'shares': ['አክሲዮን'],
+    'shareholder': ['ባለአክሲዮን'],
+    'company': ['የንግድ ማህበር', 'ማህበር'],
+    'bankruptcy': ['ኪሳራ'],
+    # Agency & Representation
+    'agency': ['ውክልና'],
+    'agent': ['ወኪል'],
+    'principal': ['ውክልና ሰጪ', 'ወካይ'],
+    'power of attorney': ['ውክልና', 'የውክልና ስልጣን'],
+    # Procedural & Judicial
+    'appeal': ['ይግባኝ'],
+    'cassation': ['ሰበር'],
+    'jurisdiction': ['የዳኝነት ስልጣን', 'የስረ-ነገር ስልጣን'],
+    'execution': ['ፍርድ አፈፃፀም'],
+    'attachment': ['ዕግድ', 'ማስያዝ'],
+    'injunction': ['ዕግድ'],
+    'plenary': ['ምልዓተ-ጉባዔ', '7 ዳኞች'],
+    'overruled': ['ተሽሯል', 'ሽሯል', 'የተሻረ'],
+    # Torts & Criminal
+    'tort': ['የፍትሐብሔር ኃላፊነት', 'ካሳ'],
+    'injury': ['ጉዳት', 'አደጋ'],
+    'negligence': ['ጥፋት', 'ቸልተኝነት'],
+    'crime': ['ወንጀል'],
+    'criminal': ['ወንጀል'],
+    'penal': ['ወንጀል'],
+    'bail': ['ዋስትና'],
+    'theft': ['ስርቆት'],
+    'corruption': ['ሙስና', 'የሙስና ወንጀል'],
+    'fraud': ['ማታለል']
+}
+
+SEARCH_STOP_WORDS = set([
+    'what', 'is', 'the', 'law', 'and', 'related', 'decisions', 'decision', 'regards', 'regard', 'to', 'his', 'her',
+    'a', 'an', 'for', 'of', 'on', 'at', 'by', 'with', 'about', 'between', 'from', 'rule', 'rules', 'case', 'cases',
+    'court', 'legal', 'in', 'relation', 'does', 'do', 'under', 'ethiopian', 'ethiopia', 'who', 'how', 'why', 'when',
+    'where', 'which', 'can', 'should', 'would', 'could', 'give', 'me', 'tell', 'explain', 'show', 'please', 'all',
+    'any', 'some', 'my', 'their', 'its', 'as', 'or', 'if', 'into', 'out', 'up', 'down', 'then', 'so', 'there',
+    'ምን', 'ነው', 'ሕግ', 'ስለ', 'ላይ', 'ጋር', 'የተመለከተ', 'እና', 'ወይም', 'እንደ', 'ውስጥ', 'ይህ', 'ያለ', 'ያለው'
+])
+
 def retrieve_relevant_cases(query, cases, max_results=5):
-    """Fast semantic/keyword retrieval over 3,246 binding precedents."""
+    """Bilingual, semantic-boosted retrieval over 3,246 binding precedents."""
     if not query:
         return []
-    norm_q = normalize_amharic(query)
-    tokens = [w for w in re.findall(r'[\w\d/]+', norm_q) if len(w) > 1]
-    if not tokens:
+
+    norm_q = normalize_amharic(query.lower())
+    raw_words = [w for w in re.findall(r'[\w\d/]+', norm_q) if len(w) > 1]
+    if not raw_words:
         return []
+
+    meaningful = [w for w in raw_words if w not in SEARCH_STOP_WORDS]
+    if not meaningful:
+        meaningful = raw_words
+
+    search_terms = set(meaningful)
+    for w in meaningful:
+        if w in LEGAL_BILINGUAL_DICT:
+            for syn in LEGAL_BILINGUAL_DICT[w]:
+                search_terms.add(normalize_amharic(syn))
+
+    digits = [w for w in raw_words if w.isdigit()]
 
     scored = []
     for i, c in enumerate(cases):
         score = 0
         c_no = str(c.get('case_no') or '')
-        provisions = normalize_amharic(str(c.get('provisions') or ''))
-        holding = normalize_amharic(str(c.get('holding') or ''))
         issue = normalize_amharic(str(c.get('legal_issue') or ''))
+        holding = normalize_amharic(str(c.get('holding') or ''))
         subject = normalize_amharic(str(c.get('legal_subject') or ''))
+        provisions = normalize_amharic(str(c.get('provisions') or ''))
         parties = normalize_amharic(str(c.get('applicant') or '') + ' ' + str(c.get('respondent') or ''))
+        full_text = f"{c_no} {issue} {holding} {subject} {provisions} {parties}"
 
-        for tok in tokens:
-            if tok.isdigit():
-                if tok in c_no:
-                    score += 40
-                if tok in provisions:
+        # Exact docket match
+        for d in digits:
+            if d == c_no:
+                score += 350
+            elif d in c_no:
+                score += 120
+            elif d in provisions:
+                score += 40
+
+        # Term matching across fields
+        matched_terms = set()
+        for t in search_terms:
+            if t in full_text:
+                matched_terms.add(t)
+                if t in issue:
+                    score += 30
+                if t in holding:
+                    score += 25
+                if t in provisions:
                     score += 20
-            else:
-                if tok in provisions:
+                if t in subject:
                     score += 15
-                if tok in issue:
-                    score += 8
-                if tok in holding:
-                    score += 6
-                if tok in subject:
-                    score += 4
-                if tok in parties:
-                    score += 3
+                if t in parties:
+                    score += 5
+
+        # Multi-concept synergy bonus (rewards cases matching multiple distinct facets of the query)
+        if len(matched_terms) > 1:
+            score += (len(matched_terms) ** 2) * 15
 
         if score > 0:
             if c.get('status') in ['PLENARY', 'PLENARY_OVERRULING'] or '7 ዳኞች' in str(c.get('bench', '')):
-                score += 5
+                score += 25
             scored.append((score, i, c))
 
     scored.sort(key=lambda x: x[0], reverse=True)
@@ -310,35 +453,35 @@ def retrieve_relevant_cases(query, cases, max_results=5):
 def call_gemini_counsel(question, retrieved_cases, api_key):
     """Query Gemini with strict grounding on Ethiopian Supreme Court precedents."""
     if not retrieved_cases:
-        return "በመረጃ ቋቱ ውስጥ ለቀረበው ጥያቄ አግባብነት ያለው አስገዳጅ የሰበር ውሳኔ አልተገኘም። እባክዎ ጥያቄዎን በሌላ የሕግ ቃል ወይም የመዝገብ/የአንቀጽ ቁጥር አሻሽለው ይጠይቁ።"
+        return "No directly matching binding Cassation precedents were found in the database for your query. Please rephrase with specific legal terms, article numbers, or docket numbers."
 
     context_blocks = []
     for idx, c in enumerate(retrieved_cases, 1):
         status_alert = ""
         if c.get('status') == 'OVERRULED':
-            status_alert = f"⚠️ [አስፈላጊ ማሳሰቢያ፡ ይህ ውሳኔ በ 7 ዳኞች ሰበር ተሽሯል! ማብራሪያ፡ {c.get('status_note', '')}]"
+            status_alert = f"⚠️ [OVERRULED PRECEDENT: This decision was explicitly overruled by the 7-Judges Plenary Bench! Note: {c.get('status_note', '')}]"
         elif c.get('status') == 'PLENARY_OVERRULING':
-            status_alert = f"⭐ [የሰበር ምልዓተ-ጉባዔ (7 ዳኞች) አስገዳጅ ታሪካዊ ውሳኔ፡ የቀድሞ ውሳኔዎችን ሽሯል! {c.get('status_note', '')}]"
+            status_alert = f"⭐ [HISTORIC 7-JUDGES PLENARY PRECEDENT: Overrules prior contradictory rulings! Note: {c.get('status_note', '')}]"
 
         # Trim holding and issue to avoid exceeding token limits while preserving essence
         holding_val = str(c.get('holding', '-')).strip()
-        if len(holding_val) > 1000:
-            holding_val = holding_val[:1000] + "..."
+        if len(holding_val) > 1200:
+            holding_val = holding_val[:1200] + "..."
         issue_val = str(c.get('legal_issue', '-')).strip()
-        if len(issue_val) > 500:
-            issue_val = issue_val[:500] + "..."
+        if len(issue_val) > 600:
+            issue_val = issue_val[:600] + "..."
 
         block = f"""[ሰበር መዝገብ {idx}]
-መዝገብ ቁጥር: {c.get('case_no') or 'ያልተረጋገጠ'}
-ቅጽ / ምንጭ: {c.get('volume', '-')} (ገጽ: {c.get('page_in_vol', '-')})
-የችሎት አደረጃጀት: {c.get('bench', '5 ዳኞች')}
-የተወሰነበት ቀን: {c.get('date', '-')}
-አመልካች: {c.get('applicant', '-')}
-ተጠሪ: {c.get('respondent', '-')}
-የሕግ ዘርፍ: {c.get('legal_subject', '-')}
-የተተረጎሙ ድንጋጌዎች: {c.get('provisions', '-')}
-የአስገዳጅነት ደረጃ: {c.get('status', 'VALID')} {status_alert}
-የተያዘው ጭብጥ: {issue_val}
+መዝገብ ቁጥር (Docket No): {c.get('case_no') or 'ያልተረጋገጠ'}
+ቅጽ / ምንጭ (Volume): {c.get('volume', '-')} (ገጽ: {c.get('page_in_vol', '-')})
+የችሎት አደረጃጀት (Bench): {c.get('bench', '5 ዳኞች')}
+የተወሰነበት ቀን (Date): {c.get('date', '-')}
+አመልካች (Applicant): {c.get('applicant', '-')}
+ተጠሪ (Respondent): {c.get('respondent', '-')}
+የሕግ ዘርፍ (Field): {c.get('legal_subject', '-')}
+የተተረጎሙ ድንጋጌዎች (Provisions): {c.get('provisions', '-')}
+የአስገዳጅነት ደረጃ (Status): {c.get('status', 'VALID')} {status_alert}
+የተያዘው ጭብጥ (Issue): {issue_val}
 አስገዳጅ የሕግ ትርጓሜ (Ratio Decidendi): {holding_val}
 """
         context_blocks.append(block)
@@ -346,23 +489,27 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
     context_str = "\n".join(context_blocks)
 
     system_prompt = (
-        "You are the Senior Legal Intelligence Counsel for the Federal Supreme Court of Ethiopia Cassation Division (የኢፌዴሪ ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት).\n"
-        "Your task is to provide an authoritative, strictly source-grounded legal answer to the user's question, based EXCLUSIVELY on the provided binding precedents (under Proclamation No. 454/1997 & 1234/2021) and statutory provisions.\n\n"
-        "MANDATORY JUDICIAL RULES:\n"
-        "1. STRICT GROUNDING: Do NOT invent case numbers, laws, dates, or doctrines not present in the provided context. If the provided precedents do not directly address the question, explicitly state that.\n"
-        "2. CITATIONS: For every legal point, cite the authentic precedent: ሰበር መ/ቁ [Docket], ቅጽ [Volume], አመልካች [Applicant] እና ተጠሪ [Respondent], and ቀን [Date].\n"
-        "3. HOLDINGS: Quote and analyze the authoritative Ratio Decidendi (አስገዳጅ የሕግ ትርጓሜ) in Amharic.\n"
-        "4. SHEPARD'S OVERRULE WARNING: If any precedent mentioned has status OVERRULED, you MUST prominently warn the user with ⚠️ [ይህ ውሳኔ በ7 ዳኞች ሰበር ተሽሯል] and explain the new rule adopted by the 7-Judges Plenary Bench.\n"
-        "5. TONE & LANGUAGE: Respond professionally in the language of the inquiry (Amharic or English). Format with clear headings, bullet points, and legal precision."
+        "You are the Senior Judicial Legal Counsel for the Federal Supreme Court of Ethiopia Cassation Division (የኢፌዴሪ ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት).\n"
+        "Your task is to provide an authoritative, comprehensive, source-grounded legal analysis to the user's question, based on the provided binding precedents (under Proclamation No. 454/1997 & 1234/2021) and statutory provisions.\n\n"
+        "CORE JUDICIAL RULES:\n"
+        "1. STRICT CITATION & SOURCING: For every legal principle or rule you state, cite the authentic precedent: ሰበር መ/ቁ [Docket Number], ቅጽ [Volume], አመልካች [Applicant] v. ተጠሪ [Respondent], and ቀን [Date].\n"
+        "2. LANGUAGE MATCHING: If the user asks in English, write your complete response, headings, reasoning, and practical takeaways in fluent, professional English (keeping authentic docket numbers and party names). If the user asks in Amharic, respond fully in professional Amharic.\n"
+        "3. HIGHLY STRUCTURED BENCH MEMORANDUM FORMAT:\n"
+        "   - **Direct Answer / Executive Summary**: Provide a clear, definitive statement resolving the user's exact legal question.\n"
+        "   - **Statutory Framework**: State the applicable statutory provisions (e.g. Civil Code, Commercial Code, Tax Proclamations, Labor Proclamations).\n"
+        "   - **Binding Cassation Precedent Analysis**: Analyze the cited precedent(s) in detail, explaining how the Cassation Division interpreted the law and resolved the issue (Ratio Decidendi).\n"
+        "   - **Practical Judicial Takeaway & Guidance**: Provide actionable guidance for litigants, counsel, tenants, or businesses.\n"
+        "4. SHEPARD'S CITATOR WARNING: If any cited case is marked OVERRULED, prominently highlight it with '⚠️ OVERRULED PRECEDENT' and explain the prevailing rule established by the 7-Judges Plenary Bench.\n"
+        "5. TONE: Objective, scholarly, authoritative, and judicial."
     )
 
-    user_prompt = f"""ተጠቃሚው ያቀረበው የሕግ ጥያቄ (User's Legal Question):
+    user_prompt = f"""User's Legal Inquiry:
 {question}
 
-ከፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት መረጃ ቋት የተገኙ አግባብነት ያላቸው አስገዳጅ ውሳኔዎች (Precedents Context):
+Authentic Binding Cassation Precedents Context:
 {context_str}
 
-እባክዎ ከላይ በቀረቡት አስገዳጅ የሰበር ውሳኔዎች እና ድንጋጌዎች ላይ ብቻ በመመስረት ዝርዝር፣ የተሟላ እና አስገዳጅ የሕግ ማጣቀሻዎችን ያካተተ ሙያዊ ትንተና ይስጡ።
+Please provide a thorough, authoritative judicial analysis answering the inquiry based directly on these binding Ethiopian Supreme Court Cassation precedents and governing laws.
 """
 
     # Dynamically discover supported models for this user's API key
