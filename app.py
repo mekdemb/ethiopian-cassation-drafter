@@ -357,10 +357,42 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
 እባክዎ ከላይ በቀረቡት አስገዳጅ የሰበር ውሳኔዎች እና ድንጋጌዎች ላይ ብቻ በመመስረት ዝርዝር፣ የተሟላ እና አስገዳጅ የሕግ ማጣቀሻዎችን ያካተተ ሙያዊ ትንተና ይስጡ።
 """
 
-    models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    # Dynamically discover supported models for this user's API key
+    discovered_models = []
+    try:
+        list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+        list_req = urllib.request.Request(list_url, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(list_req, timeout=10) as l_resp:
+            l_data = json.loads(l_resp.read().decode('utf-8'))
+            discovered_models = [
+                m['name'].replace('models/', '')
+                for m in l_data.get('models', [])
+                if 'generateContent' in m.get('supportedGenerationMethods', [])
+            ]
+    except Exception:
+        pass
+
+    # Preferred models in order of priority
+    candidate_order = [
+        "gemini-2.0-flash", "gemini-2.0-flash-exp",
+        "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-flash-002", "gemini-1.5-flash-8b",
+        "gemini-1.5-pro-latest", "gemini-1.5-pro", "gemini-1.5-pro-001", "gemini-1.5-pro-002",
+        "gemini-pro"
+    ]
+
+    models_to_try = []
+    for c in candidate_order:
+        if c in discovered_models and c not in models_to_try:
+            models_to_try.append(c)
+    for d in discovered_models:
+        if "gemini" in d and "embedding" not in d and d not in models_to_try:
+            models_to_try.append(d)
+    if not models_to_try:
+        models_to_try = candidate_order
+
     last_err = None
 
-    for model in models:
+    for model in models_to_try:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
         payload = {
             "system_instruction": {
@@ -391,7 +423,7 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
                         return parts[0].get('text', '')
         except urllib.error.HTTPError as e:
             err_body = e.read().decode('utf-8', errors='ignore')
-            last_err = f"HTTP {e.code}: {err_body}"
+            last_err = f"HTTP {e.code} ({model}): {err_body}"
             if e.code == 404:
                 continue
             return f"❌ የ Gemini API ጥሪ አልተሳካም ({e.code}): {err_body}"
