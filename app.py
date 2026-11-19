@@ -262,7 +262,7 @@ def load_volume_drive_map():
 
 volume_drive_map = load_volume_drive_map()
 
-def retrieve_relevant_cases(query, cases, max_results=8):
+def retrieve_relevant_cases(query, cases, max_results=5):
     """Fast semantic/keyword retrieval over 3,246 binding precedents."""
     if not query:
         return []
@@ -320,6 +320,14 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
         elif c.get('status') == 'PLENARY_OVERRULING':
             status_alert = f"⭐ [የሰበር ምልዓተ-ጉባዔ (7 ዳኞች) አስገዳጅ ታሪካዊ ውሳኔ፡ የቀድሞ ውሳኔዎችን ሽሯል! {c.get('status_note', '')}]"
 
+        # Trim holding and issue to avoid exceeding token limits while preserving essence
+        holding_val = str(c.get('holding', '-')).strip()
+        if len(holding_val) > 1000:
+            holding_val = holding_val[:1000] + "..."
+        issue_val = str(c.get('legal_issue', '-')).strip()
+        if len(issue_val) > 500:
+            issue_val = issue_val[:500] + "..."
+
         block = f"""[ሰበር መዝገብ {idx}]
 መዝገብ ቁጥር: {c.get('case_no') or 'ያልተረጋገጠ'}
 ቅጽ / ምንጭ: {c.get('volume', '-')} (ገጽ: {c.get('page_in_vol', '-')})
@@ -330,8 +338,8 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
 የሕግ ዘርፍ: {c.get('legal_subject', '-')}
 የተተረጎሙ ድንጋጌዎች: {c.get('provisions', '-')}
 የአስገዳጅነት ደረጃ: {c.get('status', 'VALID')} {status_alert}
-የተያዘው ጭብጥ: {c.get('legal_issue', '-')}
-አስገዳጅ የሕግ ትርጓሜ (Ratio Decidendi): {c.get('holding', '-')}
+የተያዘው ጭብጥ: {issue_val}
+አስገዳጅ የሕግ ትርጓሜ (Ratio Decidendi): {holding_val}
 """
         context_blocks.append(block)
 
@@ -359,24 +367,27 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
 
     # Dynamically discover supported models for this user's API key
     discovered_models = []
+    bad_tokens = ["tts", "audio", "speech", "image", "imagen", "embed", "realtime", "robotics"]
     try:
         list_url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
         list_req = urllib.request.Request(list_url, headers={"Content-Type": "application/json"})
         with urllib.request.urlopen(list_req, timeout=10) as l_resp:
             l_data = json.loads(l_resp.read().decode('utf-8'))
-            discovered_models = [
-                m['name'].replace('models/', '')
-                for m in l_data.get('models', [])
-                if 'generateContent' in m.get('supportedGenerationMethods', [])
-            ]
+            for m in l_data.get('models', []):
+                m_name = m.get('name', '').replace('models/', '')
+                if 'generateContent' in m.get('supportedGenerationMethods', []):
+                    # Strictly exclude TTS, audio, image, embedding models
+                    if not any(b in m_name.lower() for b in bad_tokens):
+                        discovered_models.append(m_name)
     except Exception:
         pass
 
-    # Preferred models in order of priority
+    # Preferred models in order of priority (standard text models with 1M tokens/min limit)
     candidate_order = [
-        "gemini-2.0-flash", "gemini-2.0-flash-exp",
-        "gemini-1.5-flash-latest", "gemini-1.5-flash", "gemini-1.5-flash-001", "gemini-1.5-flash-002", "gemini-1.5-flash-8b",
-        "gemini-1.5-pro-latest", "gemini-1.5-pro", "gemini-1.5-pro-001", "gemini-1.5-pro-002",
+        "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash-exp",
+        "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash-001", "gemini-1.5-flash-002", "gemini-1.5-flash-8b",
+        "gemini-2.5-flash",
+        "gemini-1.5-pro", "gemini-1.5-pro-latest", "gemini-1.5-pro-001", "gemini-1.5-pro-002",
         "gemini-pro"
     ]
 
@@ -385,8 +396,9 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
         if c in discovered_models and c not in models_to_try:
             models_to_try.append(c)
     for d in discovered_models:
-        if "gemini" in d and "embedding" not in d and d not in models_to_try:
-            models_to_try.append(d)
+        if "gemini" in d.lower() and d not in models_to_try:
+            if not any(b in d.lower() for b in bad_tokens):
+                models_to_try.append(d)
     if not models_to_try:
         models_to_try = candidate_order
 
@@ -424,7 +436,8 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
         except urllib.error.HTTPError as e:
             err_body = e.read().decode('utf-8', errors='ignore')
             last_err = f"HTTP {e.code} ({model}): {err_body}"
-            if e.code == 404:
+            # If 404 (model not found) or 429 (rate/quota limit reached on this model), try next model!
+            if e.code in [404, 429]:
                 continue
             return f"❌ የ Gemini API ጥሪ አልተሳካም ({e.code}): {err_body}"
         except Exception as e:
@@ -1251,7 +1264,7 @@ if nav == TAB_AI:
         if not api_key:
             st.error("⚠️ እባክዎ ከላይ የ Gemini API ቁልፍዎን ያስገቡ። (Please enter your Gemini API key above to proceed).")
         else:
-            top_cases = retrieve_relevant_cases(user_input, cases_data, max_results=8)
+            top_cases = retrieve_relevant_cases(user_input, cases_data, max_results=5)
 
             st.session_state.ai_chat_history.append({"role": "user", "content": user_input})
             with st.chat_message("user"):
