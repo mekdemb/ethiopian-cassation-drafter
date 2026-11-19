@@ -382,11 +382,11 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
     except Exception:
         pass
 
-    # Preferred models in order of priority (standard text models with 1M tokens/min limit)
+    # Preferred models in order of priority (most stable production text models first)
     candidate_order = [
+        "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash-001", "gemini-1.5-flash-002",
         "gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-2.0-flash-exp",
-        "gemini-1.5-flash", "gemini-1.5-flash-latest", "gemini-1.5-flash-001", "gemini-1.5-flash-002", "gemini-1.5-flash-8b",
-        "gemini-2.5-flash",
+        "gemini-1.5-flash-8b",
         "gemini-1.5-pro", "gemini-1.5-pro-latest", "gemini-1.5-pro-001", "gemini-1.5-pro-002",
         "gemini-pro"
     ]
@@ -436,15 +436,17 @@ def call_gemini_counsel(question, retrieved_cases, api_key):
         except urllib.error.HTTPError as e:
             err_body = e.read().decode('utf-8', errors='ignore')
             last_err = f"HTTP {e.code} ({model}): {err_body}"
-            # If 404 (model not found) or 429 (rate/quota limit reached on this model), try next model!
-            if e.code in [404, 429]:
-                continue
-            return f"❌ የ Gemini API ጥሪ አልተሳካም ({e.code}): {err_body}"
+            # If API key is invalid/unauthorized, stop immediately
+            if e.code in [400, 403] and ("API_KEY_INVALID" in err_body or "PERMISSION_DENIED" in err_body):
+                return f"❌ Invalid or unauthorized API Key ({e.code}). Please check your Gemini API key in the configuration above."
+            # On 503 (high demand), 429 (rate/quota limit), 404 (model not found), or 500/502/504 server errors:
+            # seamlessly failover to the next candidate model in the list!
+            continue
         except Exception as e:
             last_err = str(e)
             continue
 
-    return f"❌ የ AI ትንተና ማመንጨት አልተቻለም (Error): {last_err}"
+    return f"❌ Unable to generate AI analysis (All models busy or unavailable). Last error: {last_err}"
 
 def generate_notebooklm_dossier(question, answer, cases):
     """Generate a structured research dossier text file for NotebookLM."""
