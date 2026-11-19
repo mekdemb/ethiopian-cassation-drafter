@@ -4,6 +4,8 @@ import json
 import os
 import re
 import datetime
+import urllib.request
+import urllib.error
 from urllib.parse import quote, urlsplit
 import pandas as pd
 import plotly.express as px
@@ -242,6 +244,194 @@ def load_laws_catalog():
                 return json.load(f)
     return []
 
+# Load Volume Drive Map (linking Volumes to direct Google Drive PDFs)
+@st.cache_data
+def load_volume_drive_map():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "volume_drive_map.json"),
+        os.path.join(os.path.dirname(base_dir), "volume_drive_map.json"),
+        r"C:\Users\mekdem.belayneh\.gemini\antigravity\scratch\ethiopian_laws\cassation\volume_drive_map.json",
+        "volume_drive_map.json"
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p, encoding='utf-8') as f:
+                return json.load(f)
+    return {}
+
+volume_drive_map = load_volume_drive_map()
+
+def retrieve_relevant_cases(query, cases, max_results=8):
+    """Fast semantic/keyword retrieval over 3,246 binding precedents."""
+    if not query:
+        return []
+    norm_q = normalize_amharic(query)
+    tokens = [w for w in re.findall(r'[\w\d/]+', norm_q) if len(w) > 1]
+    if not tokens:
+        return []
+
+    scored = []
+    for i, c in enumerate(cases):
+        score = 0
+        c_no = str(c.get('case_no') or '')
+        provisions = normalize_amharic(str(c.get('provisions') or ''))
+        holding = normalize_amharic(str(c.get('holding') or ''))
+        issue = normalize_amharic(str(c.get('legal_issue') or ''))
+        subject = normalize_amharic(str(c.get('legal_subject') or ''))
+        parties = normalize_amharic(str(c.get('applicant') or '') + ' ' + str(c.get('respondent') or ''))
+
+        for tok in tokens:
+            if tok.isdigit():
+                if tok in c_no:
+                    score += 40
+                if tok in provisions:
+                    score += 20
+            else:
+                if tok in provisions:
+                    score += 15
+                if tok in issue:
+                    score += 8
+                if tok in holding:
+                    score += 6
+                if tok in subject:
+                    score += 4
+                if tok in parties:
+                    score += 3
+
+        if score > 0:
+            if c.get('status') in ['PLENARY', 'PLENARY_OVERRULING'] or '7 ዳኞች' in str(c.get('bench', '')):
+                score += 5
+            scored.append((score, i, c))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [item[2] for item in scored[:max_results]]
+
+def call_gemini_counsel(question, retrieved_cases, api_key):
+    """Query Gemini with strict grounding on Ethiopian Supreme Court precedents."""
+    if not retrieved_cases:
+        return "በመረጃ ቋቱ ውስጥ ለቀረበው ጥያቄ አግባብነት ያለው አስገዳጅ የሰበር ውሳኔ አልተገኘም። እባክዎ ጥያቄዎን በሌላ የሕግ ቃል ወይም የመዝገብ/የአንቀጽ ቁጥር አሻሽለው ይጠይቁ።"
+
+    context_blocks = []
+    for idx, c in enumerate(retrieved_cases, 1):
+        status_alert = ""
+        if c.get('status') == 'OVERRULED':
+            status_alert = f"⚠️ [አስፈላጊ ማሳሰቢያ፡ ይህ ውሳኔ በ 7 ዳኞች ሰበር ተሽሯል! ማብራሪያ፡ {c.get('status_note', '')}]"
+        elif c.get('status') == 'PLENARY_OVERRULING':
+            status_alert = f"⭐ [የሰበር ምልዓተ-ጉባዔ (7 ዳኞች) አስገዳጅ ታሪካዊ ውሳኔ፡ የቀድሞ ውሳኔዎችን ሽሯል! {c.get('status_note', '')}]"
+
+        block = f"""[ሰበር መዝገብ {idx}]
+መዝገብ ቁጥር: {c.get('case_no') or 'ያልተረጋገጠ'}
+ቅጽ / ምንጭ: {c.get('volume', '-')} (ገጽ: {c.get('page_in_vol', '-')})
+የችሎት አደረጃጀት: {c.get('bench', '5 ዳኞች')}
+የተወሰነበት ቀን: {c.get('date', '-')}
+አመልካች: {c.get('applicant', '-')}
+ተጠሪ: {c.get('respondent', '-')}
+የሕግ ዘርፍ: {c.get('legal_subject', '-')}
+የተተረጎሙ ድንጋጌዎች: {c.get('provisions', '-')}
+የአስገዳጅነት ደረጃ: {c.get('status', 'VALID')} {status_alert}
+የተያዘው ጭብጥ: {c.get('legal_issue', '-')}
+አስገዳጅ የሕግ ትርጓሜ (Ratio Decidendi): {c.get('holding', '-')}
+"""
+        context_blocks.append(block)
+
+    context_str = "\n".join(context_blocks)
+
+    system_prompt = (
+        "You are the Senior Legal Intelligence Counsel for the Federal Supreme Court of Ethiopia Cassation Division (የኢፌዴሪ ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት).\n"
+        "Your task is to provide an authoritative, strictly source-grounded legal answer to the user's question, based EXCLUSIVELY on the provided binding precedents (under Proclamation No. 454/1997 & 1234/2021) and statutory provisions.\n\n"
+        "MANDATORY JUDICIAL RULES:\n"
+        "1. STRICT GROUNDING: Do NOT invent case numbers, laws, dates, or doctrines not present in the provided context. If the provided precedents do not directly address the question, explicitly state that.\n"
+        "2. CITATIONS: For every legal point, cite the authentic precedent: ሰበር መ/ቁ [Docket], ቅጽ [Volume], አመልካች [Applicant] እና ተጠሪ [Respondent], and ቀን [Date].\n"
+        "3. HOLDINGS: Quote and analyze the authoritative Ratio Decidendi (አስገዳጅ የሕግ ትርጓሜ) in Amharic.\n"
+        "4. SHEPARD'S OVERRULE WARNING: If any precedent mentioned has status OVERRULED, you MUST prominently warn the user with ⚠️ [ይህ ውሳኔ በ7 ዳኞች ሰበር ተሽሯል] and explain the new rule adopted by the 7-Judges Plenary Bench.\n"
+        "5. TONE & LANGUAGE: Respond professionally in the language of the inquiry (Amharic or English). Format with clear headings, bullet points, and legal precision."
+    )
+
+    user_prompt = f"""ተጠቃሚው ያቀረበው የሕግ ጥያቄ (User's Legal Question):
+{question}
+
+ከፌዴራል ጠቅላይ ፍርድ ቤት ሰበር ሰሚ ችሎት መረጃ ቋት የተገኙ አግባብነት ያላቸው አስገዳጅ ውሳኔዎች (Precedents Context):
+{context_str}
+
+እባክዎ ከላይ በቀረቡት አስገዳጅ የሰበር ውሳኔዎች እና ድንጋጌዎች ላይ ብቻ በመመስረት ዝርዝር፣ የተሟላ እና አስገዳጅ የሕግ ማጣቀሻዎችን ያካተተ ሙያዊ ትንተና ይስጡ።
+"""
+
+    models = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
+    last_err = None
+
+    for model in models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={api_key}"
+        payload = {
+            "system_instruction": {
+                "parts": [{"text": system_prompt}]
+            },
+            "contents": [
+                {"role": "user", "parts": [{"text": user_prompt}]}
+            ],
+            "generationConfig": {
+                "temperature": 0.2,
+                "maxOutputTokens": 3000
+            }
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode('utf-8'),
+            headers={"Content-Type": "application/json"}
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=35) as resp:
+                res_data = json.loads(resp.read().decode('utf-8'))
+                candidates = res_data.get('candidates', [])
+                if candidates and 'content' in candidates[0]:
+                    parts = candidates[0]['content'].get('parts', [])
+                    if parts:
+                        return parts[0].get('text', '')
+        except urllib.error.HTTPError as e:
+            err_body = e.read().decode('utf-8', errors='ignore')
+            last_err = f"HTTP {e.code}: {err_body}"
+            if e.code == 404:
+                continue
+            return f"❌ የ Gemini API ጥሪ አልተሳካም ({e.code}): {err_body}"
+        except Exception as e:
+            last_err = str(e)
+            continue
+
+    return f"❌ የ AI ትንተና ማመንጨት አልተቻለም (Error): {last_err}"
+
+def generate_notebooklm_dossier(question, answer, cases):
+    """Generate a structured research dossier text file for NotebookLM."""
+    lines = []
+    lines.append("=" * 70)
+    lines.append("ETHIOPIAN CASSATION PRECEDENTS RESEARCH DOSSIER FOR NOTEBOOKLM")
+    lines.append(f"Generated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    lines.append("Source: Federal Supreme Court Cassation Division (Vols 1-28 + Plenary)")
+    lines.append("=" * 70)
+    lines.append(f"\nLEGAL INQUIRY:\n{question}\n")
+    lines.append(f"\nSYNTHESIS & ANALYSIS:\n{answer}\n")
+    lines.append("=" * 70)
+    lines.append(f"AUTHENTIC CITED PRECEDENTS ({len(cases)} Cases)\n")
+
+    for i, c in enumerate(cases, 1):
+        lines.append(f"\n[CASE #{i}]")
+        lines.append(f"Docket No: {c.get('case_no') or '-'}")
+        lines.append(f"Volume: {c.get('volume', '-')} (Page: {c.get('page_in_vol', '-')})")
+        lines.append(f"Date: {c.get('date', '-')}")
+        lines.append(f"Bench: {c.get('bench', '-')}")
+        lines.append(f"Parties: {c.get('applicant', '-')} vs {c.get('respondent', '-')}")
+        lines.append(f"Subject: {c.get('legal_subject', '-')}")
+        lines.append(f"Provisions: {c.get('provisions', '-')}")
+        lines.append(f"Status: {c.get('status', 'VALID')}")
+        if c.get('status_note'):
+            lines.append(f"Status Note: {c.get('status_note')}")
+        lines.append(f"Legal Issue:\n{c.get('legal_issue', '-')}")
+        lines.append(f"Ratio Decidendi:\n{c.get('holding', '-')}")
+        lines.append("-" * 50)
+
+    return "\n".join(lines)
+
 # ==========================================
 # LINKS BETWEEN DECISIONS AND LAWS
 # ==========================================
@@ -404,29 +594,38 @@ if 'focus_pos' not in st.session_state:
 if 'prov_filter' not in st.session_state:
     st.session_state.prov_filter = None    # "decisions citing this provision" filter
 
+TAB_PRECEDENTS = "የሰበር ውሳኔዎች (Precedents)"
+TAB_AI = "🤖 የሕግ ረዳት (AI Counsel)"
+TAB_DRAFTER = "አቤቱታ አዘጋጅ (Drafter)"
+TAB_OVERRULED = "የተሻሩ ውሳኔዎች (Overruled)"
+TAB_ANALYTICS = "የሕግ ትንተና (Analytics)"
+TAB_CITATOR = "የሥልጣን ትስስር (Citator)"
+TAB_LIBRARY = "የሕጎች ማውጫ (Library)"
+
 TAB_NAMES = [
-    "የሰበር ውሳኔዎች (Precedents)",
-    "አቤቱታ አዘጋጅ (Drafter)",
-    "የተሻሩ ውሳኔዎች (Overruled)",
-    "የሕግ ትንተና (Analytics)",
-    "የሥልጣን ትስስር (Citator)",
-    "የሕጎች ማውጫ (Library)"
+    TAB_PRECEDENTS,
+    TAB_AI,
+    TAB_DRAFTER,
+    TAB_OVERRULED,
+    TAB_ANALYTICS,
+    TAB_CITATOR,
+    TAB_LIBRARY
 ]
 if st.session_state.get('nav') not in TAB_NAMES:
-    st.session_state.nav = TAB_NAMES[0]
+    st.session_state.nav = TAB_PRECEDENTS
 
 def open_case(pos):
     """Open one decision in the Precedents screen."""
     st.session_state.focus_pos = pos
     st.session_state.browse_all = True     # "Back to results" then shows the list, not the start screen
-    st.session_state.nav = TAB_NAMES[0]
+    st.session_state.nav = TAB_PRECEDENTS
 
 def show_citing(key):
     """Show every decision that cites a provision, in the Precedents screen."""
     st.session_state.prov_filter = key
     st.session_state.focus_pos = None
     st.session_state.search_q = ""          # so the list shows every decision citing it
-    st.session_state.nav = TAB_NAMES[0]
+    st.session_state.nav = TAB_PRECEDENTS
 
 def clear_citing():
     st.session_state.prov_filter = None
@@ -503,7 +702,7 @@ if not st.session_state.get('link_done'):
         if _hit is not None:
             st.session_state.focus_pos = _hit
             st.session_state.browse_all = True
-            st.session_state.nav = TAB_NAMES[0]
+            st.session_state.nav = TAB_PRECEDENTS
 
 shown_case = None   # the decision on screen, if any (keeps the address bar in step)
 
@@ -521,12 +720,12 @@ def browse_everything():
 
 def go_decisions():
     st.session_state.focus_pos = None
-    st.session_state.nav = TAB_NAMES[0]
+    st.session_state.nav = TAB_PRECEDENTS
 
 def go_laws():
     """Carry the search words over to the Laws Library."""
     st.session_state.lib_kw = st.session_state.search_q
-    st.session_state.nav = TAB_NAMES[5]
+    st.session_state.nav = TAB_LIBRARY
 
 @st.cache_data
 def law_search_texts(_catalog):
@@ -576,7 +775,7 @@ def sort_vol_key(vol):
 
 all_volumes = sorted(list(set(c.get('volume', 'ሌሎች') for c in cases_data)), key=sort_vol_key)
 
-if st.session_state.nav == TAB_NAMES[0]:
+if st.session_state.nav == TAB_PRECEDENTS:
     st.sidebar.header("የውሳኔዎች አጣሪ (Filters)")
     selected_subjects = st.sidebar.multiselect("የሕግ ዘርፍ (Subject)", options=all_subjects, key="f_subjects")
     selected_volumes = st.sidebar.multiselect("ቅጽ / ምንጭ (Volume)", options=all_volumes, key="f_volumes")
@@ -681,7 +880,7 @@ with st.container(key="mainnav"):
 # ==========================================
 # TAB 1: SPLIT SCREEN RESEARCH & INSPECTOR
 # ==========================================
-if nav == TAB_NAMES[0] and show_start:
+if nav == TAB_PRECEDENTS and show_start:
     st.markdown("""
     <div class="start-panel">
         <h3>ምን መፈለግ ይፈልጋሉ? (What are you looking for?)</h3>
@@ -706,7 +905,7 @@ if nav == TAB_NAMES[0] and show_start:
     _bc[1].button("የተሻሩ ውሳኔዎች (Overruled decisions)", on_click=browse_status, args=(STATUS_OPTS[3],), key="browse_overruled", use_container_width=True)
     _bc[2].button("ሁሉንም ውሳኔዎች አሳይ (Show all decisions)", on_click=browse_everything, key="browse_all_btn", use_container_width=True)
 
-if nav == TAB_NAMES[0] and not show_start:
+if nav == TAB_PRECEDENTS and not show_start:
     if st.session_state.prov_filter:
         _fb1, _fb2 = st.columns([8, 2])
         with _fb1:
@@ -904,9 +1103,145 @@ if nav == TAB_NAMES[0] and not show_start:
             st.caption(f"የመረጃ ቋቱ የመጨረሻ ማሻሻያ (Database last updated): {DATA_UPDATED} · [ስህተት ያሳውቁ (Report an error)](mailto:{REPORT_EMAIL}?subject={_subject}&body={_body})")
 
 # ==========================================
-# TAB 2: AUTOMATED WORD PLEADING DRAFTER
+# TAB: AI LEGAL COUNSEL (የሕግ ረዳት)
 # ==========================================
-if nav == TAB_NAMES[1]:
+if nav == TAB_AI:
+    st.subheader("🤖 የሰበር ሕግ ረዳት (AI Legal Counsel & Research Workspace)")
+    st.caption("በኢትዮጵያ ፌዴራል ጠቅላይ ፍርድ ቤት ሰበር አስገዳጅ ውሳኔዎች (ቅጽ 1 - 28 እና 7 ዳኞች ምልዓተ-ጉባዔ) ላይ ብቻ የተመሰረተ ምንጭ-ተኮር (Source-Grounded) የሕግ ጥያቄና መልስ ረዳት")
+
+    # API Key Configuration
+    api_key = (
+        st.session_state.get("gemini_api_key")
+        or os.environ.get("GEMINI_API_KEY")
+        or (st.secrets.get("GEMINI_API_KEY") if hasattr(st, "secrets") and "GEMINI_API_KEY" in st.secrets else None)
+    )
+
+    with st.expander("🔑 የ Gemini API ቁልፍ ማስተካከያ (API Key Configuration)", expanded=not bool(api_key)):
+        st.markdown("""
+        ይህ የ AI ረዳት የሚሰራው በ **Google Gemini API** አማካኝነት ነው። 
+        [Google AI Studio (aistudio.google.com)](https://aistudio.google.com/) በመግባት በነጻ የራስዎን API Key ማግኘት ይችላሉ።
+        """)
+        entered_key = st.text_input(
+            "Gemini API Key:",
+            value=api_key or "",
+            type="password",
+            placeholder="AIzaSy...",
+            help="በ Google AI Studio የተፈጠረውን የነጻ API ቁልፍ ያስገቡ"
+        )
+        if entered_key:
+            st.session_state.gemini_api_key = entered_key.strip()
+            api_key = entered_key.strip()
+            st.success("✅ የ API ቁልፍ ተቀምጧል! ጥያቄዎን ማቅረብ ይችላሉ።")
+
+    # Example query buttons
+    st.markdown('<p class="section-label">የተመረጡ የሕግ ጥያቄዎች ምሳሌ (CLICK AN EXAMPLE QUERY)</p>', unsafe_allow_html=True)
+    ai_examples = [
+        ("ይርጋ በ7 ዳኞች ሰበር", "የይርጋ ጊዜ መቋረጥን አስመልክቶ በ7 ዳኞች ሰበር የተሰጠው አዲስ አስገዳጅ አቋም ምንድን ነው?"),
+        ("ያልተመዘገበ የቤት ሽያጭ", "ያልተመዘገበ ወይም በሰነዶች ማረጋገጫ ያልጸደቀ የቤት ሽያጭ ውል የፈረሱ ውጤት ምንድን ነው?"),
+        ("የሰራተኛ ስንብት ካሳ", "የሰራተኛ የስራ ውል ያለበቂ ምክንያት ሲቋረጥ የሚከፈሉ የካሳ እና የአገልግሎት ክፍያዎች ምን ይመስላሉ?"),
+        ("የኑዛዜ ውል ተቀባይነት", "የኑዛዜ ውል አቀራረፅና ተቀባይነት በፍ/ብ/ሕ/ቁ 881 እና ተከታዮቹ መሠረት የሰበር ውሳኔዎች ምን ይላሉ?")
+    ]
+    ai_cols = st.columns(len(ai_examples))
+    chosen_prompt = None
+    for _idx, (_short, _full) in enumerate(ai_examples):
+        if ai_cols[_idx].button(_short, key=f"ai_ex_{_idx}", use_container_width=True):
+            chosen_prompt = _full
+
+    # Chat history state
+    if "ai_chat_history" not in st.session_state:
+        st.session_state.ai_chat_history = []
+
+    # Display chat messages
+    for msg_idx, msg in enumerate(st.session_state.ai_chat_history):
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+            if msg["role"] == "assistant" and msg.get("cases"):
+                with st.expander(f"📚 የተጠቀሱ አስገዳጅ ውሳኔዎች ({len(msg['cases'])} Precedents Cited & Grounded)", expanded=False):
+                    for c_idx, sc in enumerate(msg["cases"], 1):
+                        _cno = sc.get('case_no') or f"[ተ.ቁ {sc.get('entry_no')}]"
+                        _vol = sc.get('volume', '-')
+                        _pvol = f"፣ ገጽ {sc.get('page_in_vol')}" if sc.get('page_in_vol') else ""
+                        _status_badge = "⚠️ የተሻረ (OVERRULED)" if sc.get('status') == 'OVERRULED' else ("⭐ 7 ዳኞች ሰበር" if ("7 ዳኞች" in str(sc.get('bench', '')) or sc.get('status') in ['PLENARY', 'PLENARY_OVERRULING']) else "✅ ጸንቶ የሚሰራ")
+
+                        st.markdown(f"""
+                        <div class="law-card">
+                            <div class="head">
+                                <h4>{c_idx}. መዝገብ ቁጥር {_cno} ({_vol}{_pvol})</h4>
+                                <span class="chip">{_status_badge}</span>
+                            </div>
+                            <p style="margin: 0.25rem 0; font-size: 0.85rem; color: var(--ink-muted);">
+                                <strong>አመልካች:</strong> {sc.get('applicant', '-')} | <strong>ተጠሪ:</strong> {sc.get('respondent', '-')} | <strong>ቀን:</strong> {sc.get('date', '-')}
+                            </p>
+                            <div class="quote">
+                                <strong>አስገዳጅ የሕግ ትርጓሜ (Holding):</strong> {str(sc.get('holding'))[:280]}...
+                            </div>
+                        </div>
+                        """, unsafe_allow_html=True)
+
+                        btn_c1, btn_c2, btn_c3 = st.columns([4, 4, 4])
+                        # Action 1: Add to Draft
+                        is_drafted = any(str(d.get('case_no') or d.get('entry_no')) == str(sc.get('case_no') or sc.get('entry_no')) for d in st.session_state.selected_for_draft)
+                        if is_drafted:
+                            btn_c1.info("✓ በአቤቱታ ረቂቅ ውስጥ ተካቷል")
+                        else:
+                            if btn_c1.button("➕ ወደ አቤቱታ ረቂቅ ጨምር", key=f"ai_add_{msg_idx}_{c_idx}"):
+                                st.session_state.selected_for_draft.append(sc)
+                                st.rerun()
+
+                        # Action 2: Open in Precedents
+                        pos = next((i for i, x in enumerate(cases_data) if str(x.get('entry_no')) == str(sc.get('entry_no'))), None)
+                        if pos is not None:
+                            btn_c2.button("📖 ውሳኔውን ክፈት", on_click=open_case, args=(pos,), key=f"ai_open_{msg_idx}_{c_idx}")
+
+                        # Action 3: Direct Google Drive Link
+                        _vol_match = re.search(r'\d+', str(sc.get('volume', '')))
+                        _vol_key = _vol_match.group() if _vol_match else None
+                        _drive_file = volume_drive_map.get(_vol_key) if _vol_key else None
+                        if _drive_file and _drive_file.get("id"):
+                            btn_c3.markdown(f"[📄 በ Google Drive ክፈት (PDF)](https://drive.google.com/file/d/{_drive_file['id']}/view)")
+                        elif sc.get("link"):
+                            btn_c3.markdown(f"[📄 በ Drive ክፈት]({sc['link']})")
+
+                    # Export for NotebookLM Button (Option 3 Bridge)
+                    dossier_text = generate_notebooklm_dossier(msg.get("question", ""), msg["content"], msg["cases"])
+                    st.download_button(
+                        label="📥 የዚህን ጥናት ማጠቃለያ ለ NotebookLM አውርድ (.txt)",
+                        data=dossier_text,
+                        file_name=f"Cassation_Research_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain",
+                        key=f"dossier_dl_{msg_idx}"
+                    )
+
+    # Chat Input Handling
+    user_input = st.chat_input("የሕግ ጥያቄዎን እዚህ ያስገቡ... (Ask your legal question in Amharic or English)") or chosen_prompt
+    if user_input:
+        if not api_key:
+            st.error("⚠️ እባክዎ ከላይ የ Gemini API ቁልፍዎን ያስገቡ። (Please enter your Gemini API key above to proceed).")
+        else:
+            top_cases = retrieve_relevant_cases(user_input, cases_data, max_results=8)
+
+            st.session_state.ai_chat_history.append({"role": "user", "content": user_input})
+            with st.chat_message("user"):
+                st.markdown(user_input)
+
+            with st.chat_message("assistant"):
+                with st.spinner("በ 3,246 አስገዳጅ የሰበር ውሳኔዎች እና የሕጎች ማውጫ ውስጥ በመፈለግ ላይ..."):
+                    ai_response = call_gemini_counsel(user_input, top_cases, api_key)
+                    st.markdown(ai_response)
+
+            st.session_state.ai_chat_history.append({
+                "role": "assistant",
+                "content": ai_response,
+                "cases": top_cases,
+                "question": user_input
+            })
+            st.rerun()
+
+# ==========================================
+# TAB: AUTOMATED WORD PLEADING DRAFTER
+# ==========================================
+if nav == TAB_DRAFTER:
     st.subheader("የፍርድ ቤት አቤቱታ እና ማጣቀሻ አዘጋጅ (Microsoft Word Drafter)")
     st.write("በምርምር ክፍል የመረጧቸውን አስገዳጅ ውሳኔዎች በማካተት የተሟላ **የፍርድ ቤት አቤቱታ የሕግ ማጣቀሻ ሰነድ (.docx)** በቀጥታ ማመንጨት ይችላሉ።")
 
@@ -1064,9 +1399,9 @@ if nav == TAB_NAMES[1]:
         )
 
 # ==========================================
-# TAB 3: SHEPARD'S OVERRULE MAP
+# TAB: SHEPARD'S OVERRULE MAP
 # ==========================================
-if nav == TAB_NAMES[2]:
+if nav == TAB_OVERRULED:
     st.subheader("የተሻሩ ውሳኔዎች እና የ 7 ዳኞች አስገዳጅ ውሳኔዎች ማውጫ (Shepard's Citator)")
     st.write("በአዋጅ ቁጥር 1234/2013 አንቀጽ 10(4) እና 26(1) መሠረት በሰባት (7) ዳኞች የተሰየመው የሰበር ሰሚ ችሎት የቀድሞ ባለ 5 ዳኞች ውሳኔዎችን የመሻር እና የመለወጥ ስልጣን ተሰጥቶታል፡፡")
 
@@ -1107,9 +1442,9 @@ if nav == TAB_NAMES[2]:
     st.info("**ልዩ የሕግ ማስታወሻ:** በሰባት ዳኞች ሰበር መ/ቁ 237423 (የካቲት 29/2016 ዓ.ም) በተሰጠ ውሳኔ መ/ቁ 48850፣ 58008፣ 74237፣ 94913፣ 102640 እና 218957 የቀረበውን የመሻር ጥያቄ ውድቅ በማድረግ ውሳኔዎቹ ጸንተው እንዲቀጥሉ ወስኗል።")
 
 # ==========================================
-# TAB 4: 20-YEAR JUDICIAL ANALYTICS
+# TAB: 20-YEAR JUDICIAL ANALYTICS
 # ==========================================
-if nav == TAB_NAMES[3]:
+if nav == TAB_ANALYTICS:
     st.subheader("የ 20 ዓመታት የሰበር አስገዳጅ ውሳኔዎች ትንተና (1997 - 2017 ዓ.ም)")
     
     # 1. Subject distribution
@@ -1140,9 +1475,9 @@ if nav == TAB_NAMES[3]:
 
 
 # ==========================================
-# TAB 5: STATUTORY CITATOR (FORWARD & REVERSE)
+# TAB: STATUTORY CITATOR (FORWARD & REVERSE)
 # ==========================================
-if nav == TAB_NAMES[4]:
+if nav == TAB_CITATOR:
     st.subheader("የኢትዮጵያ ሕጎች የሥልጣን ትስስር (Statutory Citator)")
     st.write("በዋና አዋጆች እና በአስፈፃሚ መመሪያዎች/ደንቦች መካከል የተዘረጋ ባለሁለት-አቅጣጫ የሥልጣን ትስስር ማውጫ")
 
@@ -1358,9 +1693,9 @@ if nav == TAB_NAMES[4]:
 
 
 # ==========================================
-# TAB 6: LAWS LIBRARY BY SUBJECT (3,696 DISTINCT ENACTMENTS)
+# TAB: LAWS LIBRARY BY SUBJECT (3,696 DISTINCT ENACTMENTS)
 # ==========================================
-if nav == TAB_NAMES[5]:
+if nav == TAB_LIBRARY:
     st.subheader("የኢትዮጵያ ሕጎች ቤተ-መጻሕፍት በዘርፍ (Ministry of Justice Laws Library)")
     st.write("በፍትህ ሚኒስቴር የታተሙ 3,696 የተጣሩ አዋጆች፣ ደንቦች፣ መመሪያዎች እና ስምምነቶች በ15 የሕግ ዘርፎች የተመደቡበት ማውጫ")
 
