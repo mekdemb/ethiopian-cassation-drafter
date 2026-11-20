@@ -579,7 +579,9 @@ Please provide a thorough, authoritative judicial analysis answering the inquiry
                 if candidates and 'content' in candidates[0]:
                     parts = candidates[0]['content'].get('parts', [])
                     if parts:
-                        return parts[0].get('text', '')
+                        text = parts[0].get('text', '')
+                        footer = f"\n\n---\n*⚡ Legal analysis powered by Google `{model}` • Grounded on authentic Federal Supreme Court precedents.*"
+                        return text + footer
         except urllib.error.HTTPError as e:
             err_body = e.read().decode('utf-8', errors='ignore')
             last_err = f"HTTP {e.code} ({model}): {err_body}"
@@ -1344,6 +1346,12 @@ if nav == TAB_AI:
     # Chat history state
     if "ai_chat_history" not in st.session_state:
         st.session_state.ai_chat_history = []
+
+    if st.session_state.ai_chat_history:
+        _c_col1, _c_col2 = st.columns([8, 2])
+        if _c_col2.button("🗑️ Clear Chat", key="clear_ai_chat", help="Clear previous conversation history"):
+            st.session_state.ai_chat_history = []
+            st.rerun()
 
     # Display chat messages
     for msg_idx, msg in enumerate(st.session_state.ai_chat_history):
