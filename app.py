@@ -262,6 +262,25 @@ def load_volume_drive_map():
 
 volume_drive_map = load_volume_drive_map()
 
+# Load Drive Dockets Index (20,461 raw decision files across 15,940 dockets in CASSF)
+@st.cache_data
+def load_drive_dockets():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "drive_dockets_compact.json"),
+        os.path.join(os.path.dirname(base_dir), "drive_dockets_compact.json"),
+        r"C:\My Files\cassation\cloud_deploy\drive_dockets_compact.json",
+        r"C:\My Files\cassation\drive_dockets_compact.json",
+        "drive_dockets_compact.json"
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            with open(p, encoding='utf-8') as f:
+                return json.load(f)
+    return {}
+
+drive_dockets = load_drive_dockets()
+
 LEGAL_BILINGUAL_DICT = {
     # Tax & Finance
     'tax': ['ታክስ', 'ግብር', 'ገቢ ግብር'],
@@ -1234,6 +1253,16 @@ if nav == TAB_PRECEDENTS and not show_start:
             st.write(f"**አመልካች:** {active_c.get('applicant', '-')}")
             st.write(f"**ተጠሪ:** {active_c.get('respondent', '-')}")
 
+            # Raw Google Drive Court Decisions from CASSF
+            c_docket = str(active_c.get('case_no', '')).strip()
+            raw_drive_matches = drive_dockets.get(c_docket) or []
+            if raw_drive_matches:
+                st.markdown("##### 📁 የዚህ ውሳኔ ሰነዶች በ Google Drive (Raw Files in CASSF)")
+                d_cols = st.columns(min(len(raw_drive_matches), 3))
+                for idx_rf, rf in enumerate(raw_drive_matches):
+                    with d_cols[idx_rf % 3]:
+                        st.markdown(f"[📄 **{rf['n']}** (ፎልደር: {rf['f']})](https://drive.google.com/file/d/{rf['id']}/view)")
+
             # Legal Issue
             st.markdown("##### የተያዘው ጭብጥ (Legal Issue)")
             st.markdown('<div class="issue-box">' + highlight_html(active_c.get('legal_issue', 'የሕግ ትርጓሜ'), terms) + '</div>', unsafe_allow_html=True)
@@ -1397,13 +1426,19 @@ if nav == TAB_AI:
                             btn_c2.button("📖 ውሳኔውን ክፈት", on_click=open_case, args=(pos,), key=f"ai_open_{msg_idx}_{c_idx}")
 
                         # Action 3: Direct Google Drive Link
-                        _vol_match = re.search(r'\d+', str(sc.get('volume', '')))
-                        _vol_key = _vol_match.group() if _vol_match else None
-                        _drive_file = volume_drive_map.get(_vol_key) if _vol_key else None
-                        if _drive_file and _drive_file.get("id"):
-                            btn_c3.markdown(f"[📄 በ Google Drive ክፈት (PDF)](https://drive.google.com/file/d/{_drive_file['id']}/view)")
-                        elif sc.get("link"):
-                            btn_c3.markdown(f"[📄 በ Drive ክፈት]({sc['link']})")
+                        _sc_docket = str(sc.get('case_no', '')).strip()
+                        _raw_files = drive_dockets.get(_sc_docket) or []
+                        if _raw_files:
+                            rf = _raw_files[0]
+                            btn_c3.markdown(f"[📄 በ Drive ክፈት ({rf['n']})](https://drive.google.com/file/d/{rf['id']}/view)")
+                        else:
+                            _vol_match = re.search(r'\d+', str(sc.get('volume', '')))
+                            _vol_key = _vol_match.group() if _vol_match else None
+                            _drive_file = volume_drive_map.get(_vol_key) if _vol_key else None
+                            if _drive_file and _drive_file.get("id"):
+                                btn_c3.markdown(f"[📄 በ Drive ክፈት (ቅጽ {_vol_key})](https://drive.google.com/file/d/{_drive_file['id']}/view)")
+                            elif sc.get("link"):
+                                btn_c3.markdown(f"[📄 በ Drive ክፈት]({sc['link']})")
 
                     # Export for NotebookLM Button (Option 3 Bridge)
                     dossier_text = generate_notebooklm_dossier(msg.get("question", ""), msg["content"], msg["cases"])
